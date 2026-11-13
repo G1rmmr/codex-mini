@@ -21,3 +21,8 @@
 .DS_Store
 __pycache__/
 *.py[cod]
+*.dmg
+*.msi
+*.pfx
+*.p12
+*.cer

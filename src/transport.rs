@@ -19,6 +19,8 @@ pub enum Event {
 /// All I/O blocks on worker threads, never on egui. Both queues are bounded.
 pub struct Backend {
     child: Child,
+    #[cfg(windows)]
+    job: windows::ProcessJob,
     outgoing: Option<SyncSender<Value>>,
     pub incoming: Receiver<Event>,
 }
@@ -32,7 +34,15 @@ impl Backend {
         let mut command = Command::new(binary);
         command
             .args(["app-server", "--listen", "stdio://"])
-            .current_dir(cwd)
+            .current_dir(cwd);
+        Self::start_command(command, wake)
+    }
+
+    pub fn start_command(
+        mut command: Command,
+        wake: impl Fn() + Send + Sync + 'static,
+    ) -> io::Result<Self> {
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -43,7 +53,20 @@ impl Backend {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+        }
+        #[cfg(windows)]
+        let job = windows::ProcessJob::new()?;
         let mut child = command.spawn()?;
+        #[cfg(windows)]
+        if let Err(error) = job.assign(&child) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
         let mut stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
@@ -107,6 +130,8 @@ impl Backend {
         });
         Ok(Self {
             child,
+            #[cfg(windows)]
+            job,
             outgoing: Some(outgoing),
             incoming,
         })
@@ -128,6 +153,8 @@ impl Backend {
 impl Drop for Backend {
     fn drop(&mut self) {
         self.outgoing.take();
+        #[cfg(windows)]
+        self.job.terminate();
         #[cfg(unix)]
         // SAFETY: the child was spawned into a fresh process group with this ID.
         unsafe {
@@ -145,6 +172,52 @@ impl Drop for Backend {
         }
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+#[cfg(windows)]
+mod windows {
+    use super::*;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::System::JobObjects::*;
+
+    pub struct ProcessJob(OwnedHandle);
+    impl ProcessJob {
+        pub fn new() -> io::Result<Self> {
+            // An unnamed, non-inheritable job owns only this backend and its descendants.
+            let raw = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+            if raw.is_null() {
+                return Err(io::Error::last_os_error());
+            }
+            let job = Self(unsafe { OwnedHandle::from_raw_handle(raw) });
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let ok = unsafe {
+                SetInformationJobObject(
+                    job.0.as_raw_handle(),
+                    JobObjectExtendedLimitInformation,
+                    (&info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                    std::mem::size_of_val(&info) as u32,
+                )
+            };
+            if ok == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(job)
+        }
+        pub fn assign(&self, child: &Child) -> io::Result<()> {
+            if unsafe { AssignProcessToJobObject(self.0.as_raw_handle(), child.as_raw_handle()) }
+                == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+        pub fn terminate(&self) {
+            unsafe {
+                TerminateJobObject(self.0.as_raw_handle(), 1);
+            }
+        }
     }
 }
 

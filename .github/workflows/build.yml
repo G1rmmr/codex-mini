@@ -1,0 +1,113 @@
+name: Build
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+jobs:
+  licenses:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup show active-toolchain
+      - name: Generate dependency licenses
+        run: |
+          set -eu
+          asset=cargo-about-0.9.3-x86_64-unknown-linux-musl
+          curl --fail --location --proto '=https' --tlsv1.2 "https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.3/$asset.tar.gz" -o /tmp/about.tar.gz
+          echo '3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4  /tmp/about.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/about.tar.gz -C /tmp
+          mkdir -p dist
+          "/tmp/$asset/cargo-about" generate --locked --fail about.hbs -o dist/THIRD_PARTY_LICENSES.html
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-licenses
+          path: dist/THIRD_PARTY_LICENSES.html
+          if-no-files-found: error
+          retention-days: 14
+
+  native:
+    needs: licenses
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            label: linux-x86_64
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            label: windows-x86_64
+          - os: macos-15
+            target: aarch64-apple-darwin
+            label: macos-aarch64
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            label: macos-x86_64
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libgl1-mesa-dev
+      - name: Install Rust and check host
+        shell: bash
+        run: |
+          rustup show active-toolchain
+          test "$(rustc -vV | sed -n 's/^host: //p')" = '${{ matrix.target }}'
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/build.ps1
+      - name: Build Linux / macOS
+        if: runner.os != 'Windows'
+        run: ./scripts/build.sh
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dependency-licenses
+          path: dist
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/package.ps1
+      - name: Package Linux / macOS
+        if: runner.os != 'Windows'
+        run: ./scripts/package.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codex-mini-${{ matrix.label }}
+          path: |
+            dist/codex-mini-*.zip
+            dist/codex-mini-*.tar.gz
+          if-no-files-found: error
+          retention-days: 14

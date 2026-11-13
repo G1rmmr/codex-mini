@@ -1,6 +1,9 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app;
 mod efficiency;
 mod global;
+mod platform;
 mod state;
 mod transport;
 mod usage;
@@ -9,6 +12,10 @@ use serde_json::json;
 use std::time::{Duration, Instant};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(windows)]
+    if std::env::args().any(|a| matches!(a.as_str(), "--diagnose" | "--help" | "-h")) {
+        platform::attach_console();
+    }
     if std::env::args().nth(1).as_deref() == Some("--rtk-hook") {
         let path = std::env::args().nth(2).ok_or("missing RTK path")?;
         return efficiency::run_hook(std::path::Path::new(&path));
@@ -16,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut settings = state::Settings::load();
     let mut binary = std::env::var("CODEX_MINI_CODEX").unwrap_or_else(|_| {
         if settings.codex_binary.is_empty() {
-            "codex".into()
+            platform::codex_binary()
         } else {
             settings.codex_binary.clone()
         }
