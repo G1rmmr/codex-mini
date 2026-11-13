@@ -3,7 +3,7 @@
 A small window for Codex.
 Rust. egui. Linux, Windows, macOS.
 
-Projects, chat history, streaming replies, approvals. Korean UI.
+Projects, chat history, streaming replies, approvals. English / Korean UI.
 Uses your installed Codex CLI and its existing login.
 
 ## Release archives
@@ -26,6 +26,8 @@ codex login
 
 Pick a project. Click `연결` (Connect). Type.
 `Ctrl+Enter` sends. `Enter` adds a line. `Esc` closes settings.
+
+Open Settings to choose English or 한국어 and Light or Dark. Changes apply immediately and persist across restarts. The default is Korean / Dark. Chats, project names and Codex replies keep their original text.
 
 Korean text uses Nanum Gothic or Noto Sans CJK on Linux, Apple SD Gothic Neo on macOS, and Malgun Gothic on Windows.
 A custom font works too: `CODEX_MINI_FONT=/path/to/font.ttf ./run.sh`.

@@ -156,6 +156,8 @@ pub struct Project {
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    pub language: crate::i18n::Language,
+    pub theme: crate::preferences::Theme,
     pub cwd: String,
     pub model: String,
     pub effort: String,
@@ -169,6 +171,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            language: Default::default(),
+            theme: Default::default(),
             cwd: std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
                 .display()

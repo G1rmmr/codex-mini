@@ -3,7 +3,9 @@
 mod app;
 mod efficiency;
 mod global;
+mod i18n;
 mod platform;
+mod preferences;
 mod state;
 mod transport;
 mod usage;
