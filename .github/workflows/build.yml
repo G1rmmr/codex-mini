@@ -48,6 +48,7 @@ jobs:
           - os: windows-2025
             target: x86_64-pc-windows-msvc
             label: windows-x86_64
+            cache: -static-crt
           - os: macos-15
             target: aarch64-apple-darwin
             label: macos-aarch64
@@ -78,7 +79,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}${{ matrix.cache }}
       - name: Format
         run: cargo fmt --all -- --check
       - name: Lint
@@ -92,6 +93,15 @@ jobs:
       - name: Build Linux / macOS
         if: runner.os != 'Windows'
         run: ./scripts/build.sh
+      - name: Smoke-test release executable
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import os, subprocess
+          exe = './dist/codex-mini' + ('.exe' if os.name == 'nt' else '')
+          result = subprocess.run([exe, '--help'], check=True, capture_output=True, text=True, timeout=15)
+          assert 'Ctrl+Enter' in result.stdout, result.stdout + result.stderr
+          PYTHON
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dependency-licenses
