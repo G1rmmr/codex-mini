@@ -49,6 +49,6 @@ jobs:
         run: |
           set -eu
           cd release
-          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 4
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 3
           sha256sum codex-mini-* > SHA256SUMS
           gh release create "$TAG" codex-mini-* SHA256SUMS --verify-tag --title "$TAG" --generate-notes
