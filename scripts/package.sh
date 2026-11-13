@@ -7,6 +7,10 @@ version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
 arch=$(uname -m)
 case "$arch" in arm64) arch=aarch64 ;; esac
 case "$(uname -s)" in Darwin) platform=macos ;; Linux) platform=linux ;; *) exit 1 ;; esac
+if [ "$platform" = macos ] && [ "$arch" != aarch64 ]; then
+    printf '%s\n' 'macOS packages require Apple Silicon.' >&2
+    exit 1
+fi
 name="codex-mini-$version-$platform-$arch"
 staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT HUP INT TERM

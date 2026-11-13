@@ -4,8 +4,7 @@ set -eu
 case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) target=x86_64-unknown-linux-musl; checksum=a28407dc13038bdc9c2a1f5a047b0c636e0c1d495b15523576e2adb992a06a17 ;;
     Darwin-arm64) target=aarch64-apple-darwin; checksum=1959bd6d89a729ccdee176b7141490bbe750820f032c74f29a752576f2495254 ;;
-    Darwin-x86_64) target=x86_64-apple-darwin; checksum=48f8cee63ae0b4853f9a77d7839e62ffcca18ef88c408f8a93d4e69986b1ab82 ;;
-    *) printf '%s\n' 'Supported: Linux x86_64, macOS arm64 / x86_64.' >&2; exit 1 ;;
+    *) printf '%s\n' 'Supported: Linux x86_64, macOS arm64.' >&2; exit 1 ;;
 esac
 app_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 staging=$(mktemp -d)
