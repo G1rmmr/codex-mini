@@ -6,8 +6,22 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn real_child_transport_handshakes_streams_and_reaps() {
-    let executable = format!("{}/tests/mock_codex.py", env!("CARGO_MANIFEST_DIR"));
-    let backend = transport::Backend::start(&executable, "/tmp", || {}).unwrap();
+    let python = std::env::var("PYTHON").unwrap_or_else(|_| {
+        if cfg!(windows) {
+            "python".into()
+        } else {
+            "python3".into()
+        }
+    });
+    let mut command = std::process::Command::new(python);
+    command
+        .arg(format!(
+            "{}/tests/mock_codex.py",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .env("PYTHONIOENCODING", "utf-8")
+        .current_dir(std::env::temp_dir());
+    let backend = transport::Backend::start_command(command, || {}).unwrap();
     let pid = backend.pid();
     backend
         .send(json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"codex_mini"}}}))
@@ -45,8 +59,35 @@ fn real_child_transport_handshakes_streams_and_reaps() {
     assert!(completed);
     assert_eq!(text, "안녕하세요. Codex Mini 테스트 응답입니다.");
     drop(backend);
+    #[cfg(unix)]
+    assert_eq!(
+        unsafe { libc::kill(pid as i32, 0) },
+        -1,
+        "backend must be reaped"
+    );
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, WAIT_OBJECT_0},
+            System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject},
+        };
+        let process = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+        if !process.is_null() {
+            assert_eq!(WaitForSingleObject(process, 1000), WAIT_OBJECT_0);
+            CloseHandle(process);
+        }
+    }
+}
+
+#[test]
+fn missing_backend_returns_an_error() {
+    let missing = std::env::temp_dir().join("codex-mini-nonexistent-backend-6fe9c8");
     assert!(
-        !std::path::Path::new(&format!("/proc/{pid}")).exists(),
-        "backend must be reaped on disconnect"
+        transport::Backend::start(
+            &missing.to_string_lossy(),
+            &std::env::temp_dir().to_string_lossy(),
+            || {}
+        )
+        .is_err()
     );
 }

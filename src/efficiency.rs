@@ -63,6 +63,11 @@ impl Options {
             }
         }
         if self.rtk {
+            if cfg!(windows) {
+                return Err(
+                    "Windows에서는 RTK 자동 필터를 꺼 주세요. 현재 Bash 명령만 지원합니다.".into(),
+                );
+            }
             let rtk = rtk.ok_or("RTK 실행 파일이 없습니다. 로그 필터를 끄고 다시 시도하세요.")?;
             let command = format!(
                 "{} --rtk-hook {}",
@@ -105,8 +110,25 @@ fn strip_nulls(value: &mut Value) {
 
 pub fn bundled_rtk() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let path = exe.parent()?.join("rtk");
-    path.is_file().then_some(path)
+    if cfg!(windows) {
+        return None;
+    }
+    let dir = exe.parent()?;
+    let candidates = vec![dir.join("rtk"), dir.join("dist/rtk")];
+    #[cfg(target_os = "macos")]
+    let candidates = {
+        let mut paths = candidates;
+        if let Some(bundle) = exe
+            .ancestors()
+            .nth(3)
+            .filter(|p| p.extension().is_some_and(|e| e == "app"))
+            && let Some(parent) = bundle.parent()
+        {
+            paths.push(parent.join("dist/rtk"));
+        }
+        paths
+    };
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 pub fn quote(s: &str) -> String {
@@ -209,6 +231,9 @@ mod tests {
             ..Default::default()
         };
         assert!(options.config(Path::new("mini"), None, &json!({})).is_err());
+        if cfg!(windows) {
+            return;
+        }
         assert_eq!(
             options
                 .config(Path::new("mini"), Some(Path::new("rtk")), &json!({}))
@@ -217,6 +242,7 @@ mod tests {
         );
     }
     #[test]
+    #[cfg(unix)]
     fn preserve_inherited_hooks_and_disabled_skills() {
         let inherited = json!({"skills":{"config":[{"path":"/a/SKILL.md","enabled":false}]},"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"true","timeout":null}]}]}});
         let options = Options {

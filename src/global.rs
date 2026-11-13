@@ -121,7 +121,7 @@ pub enum Action {
 fn codex_home() -> Result<PathBuf, String> {
     std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|s| PathBuf::from(s).join(".codex")))
+        .or_else(|| crate::platform::home_dir().map(|p| p.join(".codex")))
         .ok_or_else(|| "Codex 설정 폴더를 찾을 수 없습니다.".into())
 }
 impl GlobalUi {

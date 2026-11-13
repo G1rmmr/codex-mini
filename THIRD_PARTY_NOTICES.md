@@ -2,7 +2,7 @@
 
 Codex Mini is MIT-licensed. Dependencies keep their own licenses.
 
-This inventory comes from `Cargo.lock` and Cargo package metadata for the Linux x86_64 dependency graph. It includes optional, build and test packages; not every row is linked into the default executable. No dependency source or prebuilt executable is vendored.
+This inventory comes from `Cargo.lock` and Cargo package metadata for the Linux x86_64 dependency graph. It includes optional, build and test packages; not every row is linked into the default executable. No dependency source or prebuilt executable is vendored. Release archives also contain `THIRD_PARTY_LICENSES.html`, generated from the Linux, Windows and macOS dependency graphs. That file carries the full dependency license texts for the shipped binaries.
 
 ## Direct dependencies
 
@@ -10,6 +10,7 @@ This inventory comes from `Cargo.lock` and Cargo package metadata for the Linux 
 | --- | --- | --- | --- |
 | [eframe](https://github.com/emilk/egui/tree/main/crates/eframe) | 0.35.0 | MIT OR Apache-2.0 | Window, rendering, egui |
 | [egui_kittest](https://github.com/emilk/egui) | 0.35.0 | MIT OR Apache-2.0 | UI tests only |
+| [windows-sys](https://github.com/microsoft/windows-rs) | 0.61.2 | MIT OR Apache-2.0 | Windows process management |
 | [libc](https://github.com/rust-lang/libc) | 0.2.190 | MIT OR Apache-2.0 | Process groups |
 | [serde](https://github.com/serde-rs/serde) | 1.0.229 | MIT OR Apache-2.0 | Settings serialization |
 | [serde_json](https://github.com/serde-rs/json) | 1.0.154 | MIT OR Apache-2.0 | App-server protocol |

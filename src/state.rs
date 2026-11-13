@@ -255,10 +255,7 @@ impl Settings {
     }
 
     pub fn path() -> Option<PathBuf> {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".config")))
-            .map(|p| p.join("codex-mini/settings.json"))
+        crate::platform::settings_dir().map(|p| p.join("settings.json"))
     }
     pub fn load() -> Self {
         Self::path()

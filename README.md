@@ -1,82 +1,36 @@
-# codex-mini
-
 A small window for Codex.
-Rust. egui. Linux. Still work.
 
-Projects, chat history, streaming replies, approvals. Korean UI.
-Uses your installed Codex CLI and its existing login.
+- Rust / Cargo
+- egui / eframe — MIT OR Apache-2.0
+- serde / serde_json — MIT OR Apache-2.0
+- libc / windows-sys — MIT OR Apache-2.0
+- toml_edit — MIT OR Apache-2.0
+- egui_kittest — MIT OR Apache-2.0
+- RTK OSS — Apache-2.0
+- cargo-about — MIT OR Apache-2.0
+- GitHub Actions
 
-## Run
+## Build
 
-Rust 1.92+. OpenGL. X11 or XWayland. [Codex CLI](https://github.com/openai/codex).
-Tested with CLI 0.160.1.
+Rust. [Codex CLI](https://github.com/openai/codex). Linux needs OpenGL and X11/XWayland.
+
+Linux / macOS:
 
 ```sh
-codex login
 ./scripts/build.sh
 ./run.sh --cwd /path/to/project
 ```
 
-Pick a project. Click `연결` (Connect). Type.
-`Ctrl+Enter` sends. `Enter` adds a line. `Esc` closes settings.
+Windows, PowerShell:
 
-Korean text needs a system font: Nanum Gothic or Noto Sans CJK.
-A custom font works too: `CODEX_MINI_FONT=/path/to/font.ttf ./run.sh`.
-
-## Spend less. Maybe.
-
-Open `설정` → `사용량·절약` (Settings → Usage / Savings).
-
-- Actual input, cached input, output and reasoning counts. Last 200 turns. JSON export to clipboard.
-- Per-project reasoning effort. Start with `medium`. Raise it for difficult work.
-- Exclude unused skills and MCP servers. New chats pick up the changes.
-- Optional RTK filter. Plain `cargo test`, `clippy`, `build`, `check` commands only.
-
-```sh
-./scripts/install-rtk.sh
+```powershell
+.\scripts\build.ps1
+.\run.ps1 --cwd C:\path\to\project
 ```
 
-Restart Mini. Tick `Cargo 로그 필터 (RTK)` in Usage / Savings. Start a new chat.
-The installer pins RTK OSS 1.2.0 and checks its SHA-256.
+## Use
 
-RTK may omit useful detail. Follow its recovery hint where available, or disable the filter and rerun.
-Its telemetry is disabled for Mini's rewritten commands.
+Run `codex login` once. Pick a folder. Click `연결` (Connect).
+`Ctrl+Enter` sends. `Enter` adds a line.
 
-Cached tokens are part of input. Reasoning tokens are part of output.
-Resumed chats may show partial measurements. These are counts, not a savings claim.
-The bill remains your problem.
-
-## Local files
-
-Settings and usage: `$XDG_CONFIG_HOME/codex-mini/`, or `~/.config/codex-mini/`.
-Usage records contain counts and run metadata, not prompts or replies.
-Codex still stores its own sessions. RTK may store command output for recovery.
-
-Project savings options leave shared Codex configuration alone.
-The separate global settings editor changes shared files and keeps backups.
-
-## Checks
-
-```sh
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
-./run.sh --diagnose
-```
-
-The diagnostic checks the app-server connection. No model request.
-
-## Licenses
-
-Mini: [MIT](LICENSE).
-
-| Dependency | License |
-| --- | --- |
-| eframe / egui | MIT OR Apache-2.0 |
-| serde / serde_json | MIT OR Apache-2.0 |
-| libc | MIT OR Apache-2.0 |
-| toml_edit | MIT OR Apache-2.0 |
-| egui_kittest (tests) | MIT OR Apache-2.0 |
-| RTK OSS (optional) | Apache-2.0 |
-
-Dependency versions, transitive licenses and bundled-font notices:
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[Usage](docs/USAGE.md) · [Builds and releases](docs/BUILD.md) · [Licenses](THIRD_PARTY_NOTICES.md)

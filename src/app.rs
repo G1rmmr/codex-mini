@@ -1155,6 +1155,8 @@ impl MiniApp {
         );
         ui.weak(if self.rtk_path.is_some() {
             "test / clippy / build / check만 필터링. 생략된 진단은 RTK 복구 힌트를 확인하세요."
+        } else if cfg!(windows) {
+            "RTK 자동 필터는 Linux·macOS의 Bash 명령에서 지원됩니다."
         } else {
             "RTK 미설치 · scripts/install-rtk.sh 실행 후 앱을 다시 여세요."
         });
@@ -1927,7 +1929,7 @@ mod tests {
         harness.run();
         let editor = harness.state_mut().project_editor.as_mut().unwrap();
         editor.name = "UI 프로젝트".into();
-        editor.cwd = "/tmp".into();
+        editor.cwd = std::env::temp_dir().to_string_lossy().into_owned();
         editor.instructions = "한국어로 답변".into();
         harness.run();
         harness.get_by_label("저장").click();
