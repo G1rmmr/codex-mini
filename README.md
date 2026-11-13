@@ -14,7 +14,7 @@ A small window for Codex.
 
 Rust. [Codex CLI](https://github.com/openai/codex). Linux needs OpenGL and X11/XWayland.
 
-Linux / macOS:
+Linux / macOS (Apple Silicon):
 
 ```sh
 ./scripts/build.sh
@@ -30,7 +30,8 @@ Windows, PowerShell:
 
 ## Use
 
-Run `codex login` once. Pick a folder. Click `연결` (Connect).
+Run `codex login` once. Pick a folder. Connect.
 `Ctrl+Enter` sends. `Enter` adds a line.
+Settings: English / Korean. Light / dark.
 
 [Usage](docs/USAGE.md) · [Builds and releases](docs/BUILD.md) · [Licenses](THIRD_PARTY_NOTICES.md)

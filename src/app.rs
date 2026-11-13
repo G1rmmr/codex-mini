@@ -1,19 +1,14 @@
+use crate::i18n::Language;
 use crate::{
     state::{self, Project, Recent, Settings, Transcript, clipped, string},
     transport::{Backend, Event},
 };
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
     time::{Duration, Instant},
 };
-
-const ACCENT: Color32 = Color32::from_rgb(194, 202, 213);
-const CANVAS: Color32 = Color32::from_rgb(25, 26, 29);
-const SURFACE: Color32 = Color32::from_rgb(34, 35, 39);
-const BORDER: Color32 = Color32::from_rgb(61, 63, 69);
-const MUTED: Color32 = Color32::from_rgb(190, 194, 203);
 
 #[derive(Clone)]
 enum Pending {
@@ -39,6 +34,8 @@ struct Approval {
     params: Value,
     preview: String,
     preview_complete: bool,
+    previous: String,
+    preview_language: Language,
     answers: HashMap<String, String>,
 }
 
@@ -88,52 +85,7 @@ impl MiniApp {
     pub fn new(cc: &eframe::CreationContext<'_>, mut settings: Settings, binary: String) -> Self {
         settings.prepare_projects();
         let ctx = &cc.egui_ctx;
-        ctx.set_visuals(egui::Visuals::dark());
-        let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
-        style.visuals.panel_fill = CANVAS;
-        style.visuals.window_fill = SURFACE;
-        style.visuals.extreme_bg_color = CANVAS;
-        style.visuals.selection.bg_fill = Color32::from_rgb(67, 77, 94);
-        style.visuals.selection.stroke = egui::Stroke::new(1.0, Color32::WHITE);
-        style.visuals.override_text_color = Some(Color32::from_rgb(239, 240, 243));
-        style.visuals.weak_text_color = Some(MUTED);
-        style.visuals.disabled_alpha = 0.72;
-        style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, BORDER);
-        style.visuals.widgets.inactive.weak_bg_fill = SURFACE;
-        style.visuals.widgets.inactive.bg_fill = SURFACE;
-        style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, BORDER);
-        style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(49, 51, 57);
-        style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(49, 51, 57);
-        style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, MUTED);
-        style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, ACCENT);
-        style.spacing.item_spacing = egui::vec2(5.0, 4.0);
-        style.spacing.button_padding = egui::vec2(6.0, 2.0);
-        style.spacing.interact_size.y = 20.0;
-        for widget in [
-            &mut style.visuals.widgets.inactive,
-            &mut style.visuals.widgets.hovered,
-            &mut style.visuals.widgets.active,
-        ] {
-            widget.corner_radius = egui::CornerRadius::same(6);
-        }
-        style
-            .text_styles
-            .insert(egui::TextStyle::Body, egui::FontId::proportional(12.0));
-        style
-            .text_styles
-            .insert(egui::TextStyle::Button, egui::FontId::proportional(11.0));
-        style
-            .text_styles
-            .insert(egui::TextStyle::Small, egui::FontId::proportional(10.0));
-        style
-            .text_styles
-            .insert(egui::TextStyle::Heading, egui::FontId::proportional(13.0));
-        style
-            .text_styles
-            .insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.0));
-        style.animation_time = 0.0;
-        style.visuals.text_cursor.blink = false;
-        ctx.set_style_of(egui::Theme::Dark, style);
+        crate::preferences::configure(ctx, settings.theme);
         #[cfg(not(test))]
         install_korean_font(ctx);
         #[cfg(not(test))]
@@ -396,11 +348,12 @@ impl MiniApp {
     }
 
     fn projects_ui(&mut self, ui: &mut egui::Ui) {
+        let lang = self.settings.language;
         let can_change = !self.busy && !self.loading;
         ui.horizontal(|ui| {
-            ui.strong("프로젝트");
+            ui.strong(lang.text("프로젝트"));
             if ui
-                .add_enabled(can_change, egui::Button::new("추가"))
+                .add_enabled(can_change, egui::Button::new(lang.text("추가")))
                 .clicked()
             {
                 self.project_error = None;
@@ -438,7 +391,10 @@ impl MiniApp {
             self.switch_project(id);
         }
         if ui
-            .add_enabled(can_change, egui::Button::new("프로젝트 편집").frame(false))
+            .add_enabled(
+                can_change,
+                egui::Button::new(lang.text("프로젝트 편집")).frame(false),
+            )
             .clicked()
         {
             self.project_error = None;
@@ -446,15 +402,18 @@ impl MiniApp {
         }
         ui.separator();
         if ui
-            .add_enabled(self.ready && can_change, egui::Button::new("새 대화"))
+            .add_enabled(
+                self.ready && can_change,
+                egui::Button::new(lang.text("새 대화")),
+            )
             .clicked()
         {
             self.new_chat();
         }
         if !self.ready {
-            ui.small("연결 후 대화를 열 수 있습니다.");
+            ui.small(lang.text("연결 후 대화를 열 수 있습니다."));
         }
-        ui.small("최근 대화 · 최대 20개");
+        ui.small(lang.text("최근 대화 · 최대 20개"));
         let mut chosen = None;
         egui::ScrollArea::vertical()
             .id_salt("project_chats")
@@ -486,15 +445,16 @@ impl MiniApp {
     }
 
     fn project_editor_ui(&mut self, ctx: &egui::Context) {
+        let lang = self.settings.language;
         let Some(mut editor) = self.project_editor.take() else {
             return;
         };
         let mut open = true;
         let mut save = false;
         egui::Window::new(if editor.id == 0 {
-            "프로젝트 추가"
+            lang.text("프로젝트 추가")
         } else {
-            "프로젝트 편집"
+            lang.text("프로젝트 편집")
         })
         .id(egui::Id::new("project_editor"))
         .open(&mut open)
@@ -507,32 +467,35 @@ impl MiniApp {
         ))
         .vscroll(true)
         .show(ctx, |ui| {
-            ui.label("이름");
+            ui.label(lang.text("이름"));
             ui.add(
                 egui::TextEdit::singleline(&mut editor.name)
                     .char_limit(120)
                     .desired_width(f32::INFINITY),
             );
-            ui.label("작업 폴더");
+            ui.label(lang.text("작업 폴더"));
             ui.add(
                 egui::TextEdit::singleline(&mut editor.cwd)
                     .char_limit(4096)
                     .desired_width(f32::INFINITY),
             );
-            ui.label("프로젝트 지침");
+            ui.label(lang.text("프로젝트 지침"));
             ui.add(
                 egui::TextEdit::multiline(&mut editor.instructions)
                     .char_limit(16 * 1024)
                     .desired_rows(5)
                     .desired_width(f32::INFINITY)
-                    .hint_text("이 프로젝트에서 공통으로 지킬 작업 방식"),
+                    .hint_text(lang.text("이 프로젝트에서 공통으로 지킬 작업 방식")),
             );
-            ui.small("지침은 이 프로젝트의 새 대화·이어쓰기에 적용됩니다.");
+            ui.small(lang.text("지침은 이 프로젝트의 새 대화·이어쓰기에 적용됩니다."));
             if let Some(error) = &self.project_error {
-                ui.colored_label(ui.visuals().error_fg_color, error);
+                ui.colored_label(ui.visuals().error_fg_color, lang.message(error));
             }
             save = ui
-                .add_enabled(!self.busy && !self.loading, egui::Button::new("저장"))
+                .add_enabled(
+                    !self.busy && !self.loading,
+                    egui::Button::new(lang.text("저장")),
+                )
                 .clicked();
         });
         if save {
@@ -859,7 +822,7 @@ impl MiniApp {
             } else {
                 self.send(json!({"id":id,"error":{"code":-32601,"message":"This compact client does not support this request"}}));
             }
-            self.note("지원하지 않는 요청", &format!("{method}\n요청을 실행하지 않았습니다. 필요한 경우 공식 Codex CLI에서 이어가세요."));
+            self.note("지원하지 않는 요청", &method);
             return;
         }
         let previous = self
@@ -869,13 +832,16 @@ impl MiniApp {
             .find(|m| m.id == string(&p, "itemId"))
             .map(|m| m.body.clone())
             .unwrap_or_default();
-        let (preview, preview_complete) = approval_preview(&p, &previous);
+        let preview_language = self.settings.language;
+        let (preview, preview_complete) = approval_preview(&p, &previous, preview_language);
         self.approvals.push_back(Approval {
             id,
             method,
             params: p,
             preview,
             preview_complete,
+            previous,
+            preview_language,
             answers: HashMap::new(),
         });
     }
@@ -887,9 +853,14 @@ impl MiniApp {
     }
 
     fn approval_ui(&mut self, ctx: &egui::Context) {
+        let lang = self.settings.language;
         let mut response = None;
         if let Some(a) = self.approvals.front_mut() {
-            egui::Window::new("확인이 필요합니다")
+            if a.preview_language != lang {
+                (a.preview, a.preview_complete) = approval_preview(&a.params, &a.previous, lang);
+                a.preview_language = lang;
+            }
+            egui::Window::new(lang.text("확인이 필요합니다")).id(egui::Id::new("approval"))
                 .collapsible(false)
                 .resizable(true)
                 .default_width(520.0)
@@ -913,13 +884,13 @@ impl MiniApp {
                                         ui.add(
                                             egui::TextEdit::singleline(answer)
                                                 .password(q["isSecret"].as_bool() == Some(true))
-                                                .hint_text("답변 직접 입력"),
+                                                .hint_text(lang.text("답변 직접 입력")),
                                         );
                                         ui.separator();
                                     }
                                 }
                             } else {
-                                ui.label("아래 작업을 검토한 뒤 결정하세요.");
+                                ui.label(lang.text("아래 작업을 검토한 뒤 결정하세요."));
                                 ui.add(
                                     egui::Label::new(
                                         RichText::new(&a.preview).monospace().size(10.0),
@@ -931,9 +902,9 @@ impl MiniApp {
                         });
                     ui.separator();
                     if !a.preview_complete {
-                        ui.colored_label(Color32::LIGHT_RED, "전체 내용을 표시할 수 없어 허용을 비활성화했습니다. CLI에서 검토하세요.");
+                        ui.colored_label(ui.visuals().error_fg_color, lang.text("전체 내용을 표시할 수 없어 허용을 비활성화했습니다. CLI에서 검토하세요."));
                     }
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if a.method == "item/tool/requestUserInput" {
                             let complete = a.params["questions"].as_array().is_some_and(|qs| {
                                 qs.iter().all(|q| {
@@ -943,7 +914,7 @@ impl MiniApp {
                                 })
                             });
                             if ui
-                                .add_enabled(complete, egui::Button::new("답변 보내기"))
+                                .add_enabled(complete, egui::Button::new(lang.text("답변 보내기")))
                                 .clicked()
                             {
                                 let answers: serde_json::Map<String, Value> = a
@@ -954,12 +925,12 @@ impl MiniApp {
                                 response = Some(json!({"answers":answers}));
                             }
                         } else if a.method == "item/permissions/requestApproval" {
-                            if ui.add_enabled(a.preview_complete, egui::Button::new("요청한 권한 허용 · 이번 작업만")).clicked() {
+                            if ui.add_enabled(a.preview_complete, egui::Button::new(lang.text("요청한 권한 허용 · 이번 작업만"))).clicked() {
                                 response = Some(
                                     json!({"permissions":a.params["permissions"],"scope":"turn"}),
                                 );
                             }
-                            if ui.button("거절").clicked() {
+                            if ui.button(lang.text("거절")).clicked() {
                                 response = Some(json!({"permissions":{},"scope":"turn"}));
                             }
                         } else {
@@ -967,7 +938,7 @@ impl MiniApp {
                             let can_accept = decisions
                                 .is_none_or(|ds| ds.iter().any(|v| v.as_str() == Some("accept")));
                             if ui
-                                .add_enabled(can_accept && a.preview_complete, egui::Button::new("이번 한 번 허용"))
+                                .add_enabled(can_accept && a.preview_complete, egui::Button::new(lang.text("이번 한 번 허용")))
                                 .clicked()
                             {
                                 response = Some(json!({"decision":"accept"}));
@@ -975,13 +946,13 @@ impl MiniApp {
                             let can_decline = decisions
                                 .is_none_or(|ds| ds.iter().any(|v| v.as_str() == Some("decline")));
                             if ui
-                                .add_enabled(can_decline, egui::Button::new("거절"))
+                                .add_enabled(can_decline, egui::Button::new(lang.text("거절")))
                                 .clicked()
                             {
                                 response = Some(json!({"decision":"decline"}));
                             }
                         }
-                        ui.small("작업 중단은 메인 창에서 할 수 있습니다.");
+                        ui.small(lang.text("작업 중단은 메인 창에서 할 수 있습니다."));
                     });
                 });
         }
@@ -1061,11 +1032,13 @@ impl MiniApp {
     }
 
     fn usage_window(&mut self, ctx: &egui::Context) {
+        let lang = self.settings.language;
         if !self.show_usage {
             return;
         }
         let mut open = true;
-        egui::Window::new("사용량·절약")
+        egui::Window::new(lang.text("사용량·절약"))
+            .id(egui::Id::new("usage"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -1083,37 +1056,44 @@ impl MiniApp {
     }
 
     fn usage_ui(&mut self, ui: &mut egui::Ui) {
-        ui.strong("현재 작업");
+        let lang = self.settings.language;
+        ui.strong(lang.text("현재 작업"));
         if let Some(record) = self.meter.current() {
             if let Some(tokens) = &record.tokens {
-                token_grid(ui, "current_tokens", tokens);
+                token_grid(ui, "current_tokens", tokens, lang);
             } else {
-                ui.label("서버 사용량 수신 대기 중");
+                ui.label(lang.text("서버 사용량 수신 대기 중"));
             }
-            ui.label(format!(
+            ui.label(lang.format(
                 "{} · {} · 도구 {}회 · {}초",
-                record.model,
-                if record.effort.is_empty() {
-                    "Codex 기본값"
-                } else {
-                    &record.effort
-                },
-                record.tools,
-                record.elapsed_secs
+                &[
+                    &(record.model),
+                    &(if record.effort.is_empty() {
+                        lang.text("Codex 기본값")
+                    } else {
+                        &record.effort
+                    }),
+                    &(record.tools),
+                    &(record.elapsed_secs),
+                ],
             ));
             if record.partial {
-                ui.weak("복원 후 관측분만 포함합니다. 첫 호출 이전 사용량은 제외됩니다.");
+                ui.weak(
+                    lang.text("복원 후 관측분만 포함합니다. 첫 호출 이전 사용량은 제외됩니다."),
+                );
             }
         } else {
-            ui.label("아직 측정한 작업이 없습니다.");
+            ui.label(lang.text("아직 측정한 작업이 없습니다."));
         }
-        ui.weak("캐시는 입력에, 추론은 출력에 포함됩니다. 절감률·요금 추정값이 아닙니다.");
+        ui.weak(
+            lang.text("캐시는 입력에, 추론은 출력에 포함됩니다. 절감률·요금 추정값이 아닙니다."),
+        );
         if let Some(error) = &self.usage_error {
-            ui.colored_label(Color32::LIGHT_RED, error);
+            ui.colored_label(ui.visuals().error_fg_color, lang.message(error));
         }
         ui.separator();
-        ui.strong("이 프로젝트 · 다음 새 대화부터");
-        ui.weak("기존 대화는 시작할 때 선택한 설정을 유지합니다.");
+        ui.strong(lang.text("이 프로젝트 · 다음 새 대화부터"));
+        ui.weak(lang.text("기존 대화는 시작할 때 선택한 설정을 유지합니다."));
         let Some(project_id) = self.settings.active_project else {
             return;
         };
@@ -1122,15 +1102,19 @@ impl MiniApp {
         };
         let previous = options.clone();
         ui.horizontal(|ui| {
-            ui.label("기본 추론");
+            ui.label(lang.text("기본 추론"));
             egui::ComboBox::from_id_salt("project_effort")
                 .selected_text(if options.effort.is_empty() {
-                    "Codex 기본값"
+                    lang.text("Codex 기본값")
                 } else {
                     &options.effort
                 })
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut options.effort, String::new(), "Codex 기본값");
+                    ui.selectable_value(
+                        &mut options.effort,
+                        String::new(),
+                        lang.text("Codex 기본값"),
+                    );
                     let efforts = self
                         .models
                         .iter()
@@ -1148,22 +1132,29 @@ impl MiniApp {
                     }
                 });
         });
-        ui.weak("환경 설정에서 지정한 추론 값이 우선합니다. 모델별 지원 범위가 다릅니다.");
+        ui.weak(
+            lang.text("환경 설정에서 지정한 추론 값이 우선합니다. 모델별 지원 범위가 다릅니다."),
+        );
         ui.add_enabled(
             self.rtk_path.is_some() || options.rtk,
-            egui::Checkbox::new(&mut options.rtk, "Cargo 로그 필터 (RTK)"),
+            egui::Checkbox::new(&mut options.rtk, lang.text("Cargo 로그 필터 (RTK)")),
         );
         ui.weak(if self.rtk_path.is_some() {
-            "test / clippy / build / check만 필터링. 생략된 진단은 RTK 복구 힌트를 확인하세요."
+            lang.text(
+                "test / clippy / build / check만 필터링. 생략된 진단은 RTK 복구 힌트를 확인하세요.",
+            )
         } else if cfg!(windows) {
-            "RTK 자동 필터는 Linux·macOS의 Bash 명령에서 지원됩니다."
+            lang.text("RTK 자동 필터는 Linux·macOS의 Bash 명령에서 지원됩니다.")
         } else {
-            "RTK 미설치 · scripts/install-rtk.sh 실행 후 앱을 다시 여세요."
+            lang.text("RTK 미설치 · scripts/install-rtk.sh 실행 후 앱을 다시 여세요.")
         });
-        ui.collapsing("스킬·MCP 제외", |ui| {
-            ui.weak("필요 없는 항목만 선택하세요. 공유 Codex 설정은 바뀌지 않습니다.");
+        ui.collapsing(lang.text("스킬·MCP 제외"), |ui| {
+            ui.weak(lang.text("필요 없는 항목만 선택하세요. 공유 Codex 설정은 바뀌지 않습니다."));
             if ui
-                .add_enabled(self.ready, egui::Button::new("스킬 목록 불러오기"))
+                .add_enabled(
+                    self.ready,
+                    egui::Button::new(lang.text("스킬 목록 불러오기")),
+                )
                 .clicked()
             {
                 self.rpc(
@@ -1181,14 +1172,16 @@ impl MiniApp {
                         globally_enabled,
                         egui::Checkbox::new(
                             &mut excluded,
-                            format!(
+                            lang.format(
                                 "제외: {}{}",
-                                string(skill, "name"),
-                                if globally_enabled {
-                                    ""
-                                } else {
-                                    " (이미 꺼짐)"
-                                }
+                                &[
+                                    &(string(skill, "name")),
+                                    &(if globally_enabled {
+                                        ""
+                                    } else {
+                                        lang.text(" (이미 꺼짐)")
+                                    }),
+                                ],
                             ),
                         ),
                     )
@@ -1201,13 +1194,13 @@ impl MiniApp {
                     }
                 }
             }
-            ui.label("MCP 제외 이름 · 쉼표 구분");
+            ui.label(lang.text("MCP 제외 이름 · 쉼표 구분"));
             ui.add(
                 egui::TextEdit::singleline(&mut self.mcp_draft)
                     .desired_width(ui.available_width())
                     .hint_text("server_name, another_server"),
             );
-            if ui.button("MCP 제외 적용").clicked() {
+            if ui.button(lang.text("MCP 제외 적용")).clicked() {
                 let names: Vec<_> = self
                     .mcp_draft
                     .split(',')
@@ -1227,15 +1220,17 @@ impl MiniApp {
                         Some("MCP 이름은 영문·숫자·밑줄·하이픈만 사용할 수 있습니다.".into());
                 }
             }
-            if ui.button("제외 항목 초기화").clicked() {
+            if ui.button(lang.text("제외 항목 초기화")).clicked() {
                 options.disabled_skills.clear();
                 options.disabled_mcp.clear();
                 self.mcp_draft.clear();
             }
-            ui.label(format!(
+            ui.label(lang.format(
                 "스킬 {}개 · MCP {}개 제외",
-                options.disabled_skills.len(),
-                options.disabled_mcp.len()
+                &[
+                    &(options.disabled_skills.len()),
+                    &(options.disabled_mcp.len()),
+                ],
             ));
         });
         if options != previous {
@@ -1251,34 +1246,40 @@ impl MiniApp {
         }
         ui.separator();
         ui.horizontal(|ui| {
-            ui.strong(format!(
+            ui.strong(lang.format(
                 "최근 작업 · {} / {}",
-                self.meter.records.len(),
-                crate::usage::KEEP
+                &[&(self.meter.records.len()), &(crate::usage::KEEP)],
             ));
-            if ui.button("JSON 복사").clicked() {
+            if ui.button(lang.text("JSON 복사")).clicked() {
                 ui.ctx().copy_text(
                     serde_json::to_string_pretty(&self.meter.records).unwrap_or_default(),
                 );
             }
         });
-        ui.weak("이 PC의 최근 200개 작업. 프롬프트·코드·응답 본문은 기록하지 않습니다.");
+        ui.weak(lang.text("이 PC의 최근 200개 작업. 프롬프트·코드·응답 본문은 기록하지 않습니다."));
         for record in &self.meter.records {
             ui.push_id((&record.thread, &record.turn), |ui| {
                 ui.collapsing(
-                    format!(
+                    lang.format(
                         "{} · {} · {} · {}초",
-                        record.project, record.profile, record.status, record.elapsed_secs
+                        &[
+                            &(record.project),
+                            &lang.message(&record.profile),
+                            &(record.status),
+                            &(record.elapsed_secs),
+                        ],
                     ),
                     |ui| {
                         if let Some(tokens) = &record.tokens {
-                            token_grid(ui, "record_tokens", tokens);
+                            token_grid(ui, "record_tokens", tokens, lang);
                         } else {
-                            ui.label("서버 사용량 없음");
+                            ui.label(lang.text("서버 사용량 없음"));
                         }
-                        ui.label(format!("{} · 도구 {}회", record.model, record.tools));
+                        ui.label(
+                            lang.format("{} · 도구 {}회", &[&(record.model), &(record.tools)]),
+                        );
                         if record.partial {
-                            ui.weak("복원 후 관측분");
+                            ui.weak(lang.text("복원 후 관측분"));
                         }
                     },
                 );
@@ -1287,34 +1288,85 @@ impl MiniApp {
     }
 
     fn settings_ui(&mut self, ui: &mut egui::Ui) {
-        let field_width = (ui.available_width() - 80.0).max(120.0);
+        let lang = self.settings.language;
+        let old_preferences = (lang, self.settings.theme);
+        const LABEL_WIDTH: f32 = 72.0;
+        const ROW_HEIGHT: f32 = 24.0;
+        let field_width = (ui.available_width() - LABEL_WIDTH - 12.0).max(120.0);
+        let label = |ui: &mut egui::Ui, text: &str| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(LABEL_WIDTH, ROW_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.label(text);
+                },
+            );
+        };
+        ui.spacing_mut().interact_size.y = ROW_HEIGHT;
+        ui.small(lang.text("화면"));
+        egui::Grid::new("appearance_fields")
+            .num_columns(2)
+            .min_col_width(LABEL_WIDTH)
+            .spacing([12.0, 8.0])
+            .show(ui, |ui| {
+                label(ui, lang.text("언어"));
+                ui.horizontal(|ui| {
+                    let width = (field_width - ui.spacing().item_spacing.x) / 2.0;
+                    for (value, text) in
+                        [(Language::Korean, "한국어"), (Language::English, "English")]
+                    {
+                        if ui
+                            .add_sized(
+                                [width, ROW_HEIGHT],
+                                egui::Button::new(text).selected(self.settings.language == value),
+                            )
+                            .clicked()
+                        {
+                            self.settings.language = value;
+                        }
+                    }
+                });
+                ui.end_row();
+                label(ui, lang.text("테마"));
+                ui.horizontal(|ui| {
+                    let width = (field_width - ui.spacing().item_spacing.x) / 2.0;
+                    for (value, text) in [
+                        (crate::preferences::Theme::Light, lang.text("라이트")),
+                        (crate::preferences::Theme::Dark, lang.text("다크")),
+                    ] {
+                        if ui
+                            .add_sized(
+                                [width, ROW_HEIGHT],
+                                egui::Button::new(text).selected(self.settings.theme == value),
+                            )
+                            .clicked()
+                        {
+                            self.settings.theme = value;
+                        }
+                    }
+                });
+                ui.end_row();
+            });
+        ui.add_space(8.0);
+        ui.small("Codex");
         egui::Grid::new("settings_fields")
             .num_columns(2)
-            .spacing([8.0, 6.0])
+            .min_col_width(LABEL_WIDTH)
+            .spacing([12.0, 8.0])
             .show(ui, |ui| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(64.0, 20.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        ui.label("작업 폴더");
-                    },
-                );
-                ui.add_enabled(
-                    false,
-                    egui::TextEdit::singleline(&mut self.settings.cwd).desired_width(field_width),
-                );
+                label(ui, lang.text("작업 폴더"));
+                ui.add_enabled_ui(false, |ui| {
+                    ui.add_sized(
+                        [field_width, ROW_HEIGHT],
+                        egui::TextEdit::singleline(&mut self.settings.cwd),
+                    );
+                });
                 ui.end_row();
-                ui.allocate_ui_with_layout(
-                    egui::vec2(64.0, 20.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        ui.label("모델");
-                    },
-                );
+                label(ui, lang.text("모델"));
                 ui.add_enabled_ui(!self.busy && !self.loading, |ui| {
                     egui::ComboBox::from_id_salt("model")
                         .selected_text(if self.settings.model.is_empty() {
-                            "Codex 기본값"
+                            lang.text("Codex 기본값")
                         } else {
                             &self.settings.model
                         })
@@ -1325,7 +1377,7 @@ impl MiniApp {
                                 .selectable_value(
                                     &mut self.settings.model,
                                     String::new(),
-                                    "Codex 기본값",
+                                    lang.text("Codex 기본값"),
                                 )
                                 .changed();
                             for model in &self.models {
@@ -1343,14 +1395,9 @@ impl MiniApp {
                             }
                         });
                 });
+
                 ui.end_row();
-                ui.allocate_ui_with_layout(
-                    egui::vec2(64.0, 20.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        ui.label("추론");
-                    },
-                );
+                label(ui, lang.text("추론"));
                 ui.add_enabled_ui(!self.busy && !self.loading, |ui| {
                     let efforts = self
                         .models
@@ -1359,14 +1406,18 @@ impl MiniApp {
                         .and_then(|m| m["supportedReasoningEfforts"].as_array());
                     egui::ComboBox::from_id_salt("effort")
                         .selected_text(if self.settings.effort.is_empty() {
-                            "기본값"
+                            lang.text("기본값")
                         } else {
                             &self.settings.effort
                         })
                         .width(field_width)
                         .truncate()
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.settings.effort, String::new(), "기본값");
+                            ui.selectable_value(
+                                &mut self.settings.effort,
+                                String::new(),
+                                lang.text("기본값"),
+                            );
                             if let Some(efforts) = efforts {
                                 for effort in efforts {
                                     let name = string(effort, "reasoningEffort");
@@ -1379,17 +1430,24 @@ impl MiniApp {
                             }
                         });
                 });
+
                 ui.end_row();
             });
-        ui.add_space(8.0);
+        if old_preferences != (self.settings.language, self.settings.theme) {
+            self.settings.theme.apply(ui.ctx());
+            self.save();
+            ui.ctx().request_repaint();
+        }
+        ui.add_space(4.0);
         ui.label(
-            RichText::new("추가 권한이 필요하면 승인을 요청합니다.")
-                .size(10.0)
-                .color(MUTED),
+            RichText::new(lang.text("추가 권한이 필요하면 승인을 요청합니다."))
+                .small()
+                .color(ui.visuals().weak_text_color()),
         );
     }
 
     fn main_ui(&mut self, ui: &mut egui::Ui) {
+        let lang = self.settings.language;
         let ctx = ui.ctx().clone();
         let project = self
             .settings
@@ -1399,7 +1457,7 @@ impl MiniApp {
         egui::Panel::top("header")
             .frame(
                 egui::Frame::new()
-                    .fill(CANVAS)
+                    .fill(ui.visuals().panel_fill)
                     .inner_margin(egui::Margin::symmetric(10, 6)),
             )
             .show(ui, |ui| {
@@ -1408,7 +1466,7 @@ impl MiniApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add(
-                                egui::Button::new("설정")
+                                egui::Button::new(lang.text("설정"))
                                     .frame(true)
                                     .selected(self.show_settings),
                             )
@@ -1416,12 +1474,12 @@ impl MiniApp {
                         {
                             self.show_settings = !self.show_settings;
                         }
-                        ui.toggle_value(&mut self.show_projects, "프로젝트");
-                        ui.menu_button("대화", |ui| {
+                        ui.toggle_value(&mut self.show_projects, lang.text("프로젝트"));
+                        ui.menu_button(lang.text("대화"), |ui| {
                             if ui
                                 .add_enabled(
                                     self.ready && !self.busy && !self.loading,
-                                    egui::Button::new("새 대화"),
+                                    egui::Button::new(lang.text("새 대화")),
                                 )
                                 .clicked()
                             {
@@ -1431,7 +1489,7 @@ impl MiniApp {
                             ui.separator();
                             let mut chosen = None;
                             if self.settings.recent.is_empty() {
-                                ui.weak("최근 대화 없음");
+                                ui.weak(lang.text("최근 대화 없음"));
                             }
                             for recent in self
                                 .settings
@@ -1456,7 +1514,7 @@ impl MiniApp {
                             }
                             if let Some(id) = &self.thread_id {
                                 ui.separator();
-                                if ui.button("대화 ID 복사").clicked() {
+                                if ui.button(lang.text("대화 ID 복사")).clicked() {
                                     ctx.copy_text(id.clone());
                                     ui.close();
                                 }
@@ -1469,24 +1527,32 @@ impl MiniApp {
             egui::Panel::left("projects")
                 .default_size(150.0)
                 .size_range(130.0..=220.0)
-                .frame(egui::Frame::new().fill(SURFACE).inner_margin(8.0))
+                .frame(
+                    egui::Frame::new()
+                        .fill(ui.visuals().window_fill)
+                        .inner_margin(8.0),
+                )
                 .show(ui, |ui| self.projects_ui(ui));
         }
         egui::Panel::bottom("status")
             .show_separator_line(false)
             .frame(
                 egui::Frame::new()
-                    .fill(CANVAS)
+                    .fill(ui.visuals().panel_fill)
                     .inner_margin(egui::Margin::symmetric(10, 3)),
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(&self.status).size(10.0).color(MUTED));
+                    ui.label(
+                        RichText::new(lang.message(&self.status))
+                            .size(10.0)
+                            .color(ui.visuals().weak_text_color()),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if self.backend.is_none() {
                             if ui
                                 .add(
-                                    egui::Button::new(RichText::new("연결").size(10.0))
+                                    egui::Button::new(RichText::new(lang.text("연결")).size(10.0))
                                         .min_size(egui::vec2(44.0, 20.0)),
                                 )
                                 .clicked()
@@ -1496,7 +1562,7 @@ impl MiniApp {
                         } else if ui
                             .add_enabled(
                                 !self.busy,
-                                egui::Button::new(RichText::new("연결 종료").size(10.0))
+                                egui::Button::new(RichText::new(lang.text("연결 종료")).size(10.0))
                                     .frame(false),
                             )
                             .clicked()
@@ -1510,21 +1576,24 @@ impl MiniApp {
             .show_separator_line(false)
             .frame(
                 egui::Frame::new()
-                    .fill(CANVAS)
+                    .fill(ui.visuals().panel_fill)
                     .inner_margin(egui::Margin::symmetric(10, 3)),
             )
             .show(ui, |ui| {
                 if let Some(error) = self.error.clone() {
                     ui.horizontal_wrapped(|ui| {
-                        ui.colored_label(ui.visuals().error_fg_color, &error);
-                        if ui.small_button("닫기").clicked() {
+                        ui.colored_label(ui.visuals().error_fg_color, lang.message(&error));
+                        if ui.small_button(lang.text("닫기")).clicked() {
                             self.error = None;
                         }
                     });
                 }
                 egui::Frame::new()
-                    .fill(SURFACE)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
+                    .fill(ui.visuals().window_fill)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        ui.visuals().widgets.noninteractive.bg_stroke.color,
+                    ))
                     .corner_radius(8)
                     .inner_margin(8.0)
                     .show(ui, |ui| {
@@ -1534,14 +1603,21 @@ impl MiniApp {
                                 .desired_rows(2)
                                 .desired_width(f32::INFINITY)
                                 .frame(egui::Frame::NONE)
-                                .hint_text(RichText::new("메시지 입력").color(MUTED))
+                                .hint_text(
+                                    RichText::new(lang.text("메시지 입력"))
+                                        .color(ui.visuals().weak_text_color()),
+                                )
                                 .id_salt("prompt"),
                         );
                         ui.add_space(4.0);
                         let shortcut = ui
                             .input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter));
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("Ctrl+Enter 전송").size(10.0).color(MUTED));
+                            ui.label(
+                                RichText::new(lang.text("Ctrl+Enter 전송"))
+                                    .size(10.0)
+                                    .color(ui.visuals().weak_text_color()),
+                            );
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
@@ -1550,20 +1626,22 @@ impl MiniApp {
                                         && !self.loading
                                         && !self.prompt.trim().is_empty();
                                     let send = egui::Button::new(
-                                        RichText::new("보내기").color(if enabled {
-                                            CANVAS
+                                        RichText::new(lang.text("보내기")).color(if enabled {
+                                            ui.visuals().selection.stroke.color
                                         } else {
-                                            MUTED
+                                            ui.visuals().weak_text_color()
                                         }),
                                     )
                                     .fill(if enabled {
-                                        Color32::from_rgb(221, 224, 230)
+                                        ui.visuals().selection.bg_fill
                                     } else {
-                                        Color32::from_rgb(48, 50, 56)
+                                        ui.visuals().widgets.inactive.bg_fill
                                     });
                                     if ui
                                         .add_enabled(enabled, send)
-                                        .on_disabled_hover_text("연결 후 메시지를 입력하세요.")
+                                        .on_disabled_hover_text(
+                                            lang.text("연결 후 메시지를 입력하세요."),
+                                        )
                                         .clicked()
                                         || (enabled && shortcut)
                                     {
@@ -1573,7 +1651,7 @@ impl MiniApp {
                                         && ui
                                             .add_enabled(
                                                 self.turn_id.is_some(),
-                                                egui::Button::new("중단"),
+                                                egui::Button::new(lang.text("중단")),
                                             )
                                             .clicked()
                                         && let (Some(thread), Some(turn)) =
@@ -1591,7 +1669,7 @@ impl MiniApp {
                     });
             });
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(CANVAS).inner_margin(egui::Margin::symmetric(10, 8)))
+            .frame(egui::Frame::new().fill(ui.visuals().panel_fill).inner_margin(egui::Margin::symmetric(10, 8)))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.add(egui::Label::new(RichText::new(&project).size(13.0).strong()).truncate()).on_hover_text(&self.settings.cwd);
@@ -1601,25 +1679,30 @@ impl MiniApp {
                 egui::ScrollArea::vertical().id_salt("chat").stick_to_bottom(!self.transcript.messages.is_empty()).auto_shrink([false,false]).show(ui,|ui| {
                     if self.transcript.messages.is_empty() {
                         ui.add_space(16.0);
-                        ui.label(RichText::new("대화 없음").size(12.0));
+                        ui.label(RichText::new(lang.text("대화 없음")).size(12.0));
                         ui.add_space(2.0);
-                        ui.label(RichText::new(if self.backend.is_none() { "연결 후 메시지를 입력하세요." } else { "아래에 작업 내용을 입력하세요." }).size(12.0).color(MUTED));
+                        ui.label(RichText::new(if self.backend.is_none() { lang.text("연결 후 메시지를 입력하세요.") } else { lang.text("아래에 작업 내용을 입력하세요.") }).size(12.0).color(ui.visuals().weak_text_color()));
                     }
-                    if self.transcript.trimmed { ui.weak("이전 내용 일부는 화면에서 생략했습니다. 원본은 Codex에 남아 있습니다."); }
+                    if self.transcript.trimmed { ui.weak(lang.text("이전 내용 일부는 화면에서 생략했습니다. 원본은 Codex에 남아 있습니다.")); }
                     for m in &self.transcript.messages {
                         ui.push_id(&m.id, |ui| {
                             if m.tool {
-                                egui::CollapsingHeader::new(&m.title).show(ui,|ui| {
-                                    ui.add(egui::Label::new(RichText::new(&m.body).monospace().size(10.0)).wrap().selectable(true));
-                                    if ui.small_button("복사").clicked() { ctx.copy_text(m.body.clone()); }
+                                let body = if m.id.starts_with("note-") && m.title == "지원하지 않는 요청" {
+                                    std::borrow::Cow::Owned(lang.format("{method}\n요청을 실행하지 않았습니다. 필요한 경우 공식 Codex CLI에서 이어가세요.", &[&m.body]))
+                                } else {
+                                    std::borrow::Cow::Borrowed(m.body.as_str())
+                                };
+                                egui::CollapsingHeader::new(lang.message(&m.title)).id_salt("message").show(ui,|ui| {
+                                    ui.add(egui::Label::new(RichText::new(body.as_ref()).monospace().size(10.0)).wrap().selectable(true));
+                                    if ui.small_button(lang.text("복사")).clicked() { ctx.copy_text(body.into_owned()); }
                                 });
                             } else {
                                 egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)).show(ui,|ui| {
                                     ui.set_min_width(ui.available_width());
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new(&m.title).size(10.0).color(MUTED));
+                                        ui.label(RichText::new(lang.message(&m.title)).size(10.0).color(ui.visuals().weak_text_color()));
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
-                                            if ui.add(egui::Button::new(RichText::new("복사").size(10.0)).frame(false)).clicked() { ctx.copy_text(m.body.clone()); }
+                                            if ui.add(egui::Button::new(RichText::new(lang.text("복사")).size(10.0)).frame(false)).clicked() { ctx.copy_text(m.body.clone()); }
                                         });
                                     });
                                     ui.add(egui::Label::new(&m.body).wrap().selectable(true));
@@ -1638,7 +1721,8 @@ impl MiniApp {
             && self.approvals.is_empty()
         {
             let mut open = true;
-            egui::Window::new("프로젝트 목록")
+            egui::Window::new(lang.text("프로젝트 목록"))
+                .id(egui::Id::new("project_list"))
                 .open(&mut open)
                 .default_width(220.0)
                 .max_height((ctx.content_rect().height() - 70.0).max(100.0))
@@ -1650,10 +1734,13 @@ impl MiniApp {
         }
         self.project_editor_ui(&ctx);
         let global_was_open = self.global.open;
-        if let Some(action) =
-            self.global
-                .ui(&ctx, self.ready, !self.busy && !self.loading, &self.binary)
-        {
+        if let Some(action) = self.global.ui(
+            &ctx,
+            self.ready,
+            !self.busy && !self.loading,
+            &self.binary,
+            lang,
+        ) {
             match action {
                 crate::global::Action::Binary(binary) => {
                     self.binary = binary;
@@ -1683,71 +1770,113 @@ impl MiniApp {
 
         if self.show_settings {
             let mut open = true;
-            egui::Window::new("환경 설정")
+            egui::Window::new(lang.text("환경 설정"))
+                .id(egui::Id::new("settings"))
                 .open(&mut open)
                 .collapsible(false)
                 .fixed_size(egui::vec2(
                     (ctx.content_rect().width() - 40.0).min(400.0),
-                    (ctx.content_rect().height() - 80.0).min(270.0),
+                    (ctx.content_rect().height() - 60.0).min(340.0),
                 ))
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .resizable(false)
                 .vscroll(true)
                 .show(&ctx, |ui| {
-                    self.settings_ui(ui);
-                    if ui.button("사용량·절약").clicked() {
-                        self.show_usage = true;
-                        self.show_settings = false;
-                        self.mcp_draft = self
-                            .settings
-                            .active()
-                            .map(|p| p.efficiency.disabled_mcp.join(", "))
-                            .unwrap_or_default();
-                    }
-                    if ui.button("전역 설정 · 지침 / 스킬 / MCP").clicked() {
-                        self.global.open = true;
-                        self.show_settings = false;
-                    }
-                    if self.global.changed
-                        && !self.busy
-                        && !self.loading
-                        && ui.button("변경 적용 · 다시 연결").clicked()
-                    {
-                        self.disconnect();
-                        self.connect(&ctx);
-                        self.global.changed = false;
-                    }
-                    ui.separator();
-                    if !self.account.is_empty() {
-                        ui.label(&self.account);
-                    }
-                    if self.ready
-                        && self.account == "로그인 필요"
-                        && ui.button("ChatGPT 로그인").clicked()
-                    {
-                        self.rpc(
-                            "account/login/start",
-                            json!({"type":"chatgpt"}),
-                            Pending::Login,
-                        );
-                    }
-                    ui.toggle_value(&mut self.show_diagnostics, "진단");
+                    egui::Frame::new().inner_margin(6).show(ui, |ui| {
+                        self.settings_ui(ui);
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
+                            if ui
+                                .add_sized(
+                                    [width, 26.0],
+                                    egui::Button::new(lang.text("사용량·절약")),
+                                )
+                                .clicked()
+                            {
+                                self.show_usage = true;
+                                self.show_settings = false;
+                                self.mcp_draft = self
+                                    .settings
+                                    .active()
+                                    .map(|p| p.efficiency.disabled_mcp.join(", "))
+                                    .unwrap_or_default();
+                            }
+                            if ui
+                                .add_sized([width, 26.0], egui::Button::new(lang.text("전역 설정")))
+                                .on_hover_text(lang.text("전역 설정 · 지침 / 스킬 / MCP"))
+                                .clicked()
+                            {
+                                self.global.open = true;
+                                self.show_settings = false;
+                            }
+                        });
+                        if self.global.changed
+                            && !self.busy
+                            && !self.loading
+                            && ui.button(lang.text("변경 적용 · 다시 연결")).clicked()
+                        {
+                            self.disconnect();
+                            self.connect(&ctx);
+                            self.global.changed = false;
+                        }
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.checkbox(&mut self.show_diagnostics, lang.text("진단"));
+                                    let account = if self.account.is_empty() {
+                                        lang.text("연결 전").into()
+                                    } else {
+                                        lang.message(&self.account)
+                                    };
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    RichText::new(account)
+                                                        .small()
+                                                        .color(ui.visuals().weak_text_color()),
+                                                )
+                                                .truncate(),
+                                            );
+                                        },
+                                    );
+                                },
+                            );
+                        });
+                        if self.ready
+                            && self.account == "로그인 필요"
+                            && ui.button(lang.text("ChatGPT 로그인")).clicked()
+                        {
+                            self.rpc(
+                                "account/login/start",
+                                json!({"type":"chatgpt"}),
+                                Pending::Login,
+                            );
+                        }
+                    });
                 });
             if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                 self.show_settings = false;
             }
         }
         if let Some(url) = &self.auth_url {
-            egui::Window::new("로그인")
+            egui::Window::new(lang.text("로그인"))
+                .id(egui::Id::new("login"))
                 .collapsible(false)
                 .show(&ctx, |ui| {
-                    ui.hyperlink_to("브라우저에서 ChatGPT 로그인 열기", url);
+                    ui.hyperlink_to(lang.text("브라우저에서 ChatGPT 로그인 열기"), url);
                 });
         }
         self.usage_window(&ctx);
         self.approval_ui(&ctx);
         if self.show_diagnostics {
-            egui::Window::new("진단")
+            egui::Window::new(lang.text("진단"))
+                .id(egui::Id::new("diagnostics"))
                 .open(&mut self.show_diagnostics)
                 .default_width(600.0)
                 .show(&ctx, |ui| {
@@ -1757,10 +1886,10 @@ impl MiniApp {
                         self.backend
                             .as_ref()
                             .map(|b| b.pid().to_string())
-                            .unwrap_or_else(|| "연결 전".into())
+                            .unwrap_or_else(|| lang.text("연결 전").into())
                     ));
-                    ui.label(format!("Codex 실행 파일: {}", self.binary));
-                    ui.label("로그는 최대 40줄만 메모리에 보관합니다.");
+                    ui.label(lang.format("Codex 실행 파일: {}", &[&(self.binary)]));
+                    ui.label(lang.text("로그는 최대 40줄만 메모리에 보관합니다."));
                     egui::ScrollArea::vertical()
                         .max_height(350.0)
                         .show(ui, |ui| {
@@ -1821,7 +1950,7 @@ impl eframe::App for MiniApp {
     }
 }
 
-fn token_grid(ui: &mut egui::Ui, id: &str, tokens: &crate::usage::Tokens) {
+fn token_grid(ui: &mut egui::Ui, id: &str, tokens: &crate::usage::Tokens, lang: Language) {
     egui::Grid::new(id).num_columns(2).show(ui, |ui| {
         for (label, value) in [
             ("입력", tokens.input_tokens),
@@ -1829,14 +1958,14 @@ fn token_grid(ui: &mut egui::Ui, id: &str, tokens: &crate::usage::Tokens) {
             ("출력", tokens.output_tokens),
             ("추론 출력 (포함)", tokens.reasoning_output_tokens),
         ] {
-            ui.label(label);
+            ui.label(lang.text(label));
             ui.monospace(crate::usage::number(value));
             ui.end_row();
         }
     });
 }
 
-fn approval_preview(params: &Value, previous: &str) -> (String, bool) {
+fn approval_preview(params: &Value, previous: &str, lang: Language) -> (String, bool) {
     let mut preview = String::new();
     for (key, label) in [
         ("command", "실행할 명령"),
@@ -1845,7 +1974,7 @@ fn approval_preview(params: &Value, previous: &str) -> (String, bool) {
         ("grantRoot", "허용할 경로"),
     ] {
         if let Some(value) = params[key].as_str().filter(|s| !s.is_empty()) {
-            preview.push_str(&format!("{label}\n{value}\n\n"));
+            preview.push_str(&format!("{}\n{value}\n\n", lang.text(label)));
         }
     }
     for (key, label) in [
@@ -1855,13 +1984,14 @@ fn approval_preview(params: &Value, previous: &str) -> (String, bool) {
     ] {
         if let Some(value) = params.get(key).filter(|v| !v.is_null()) {
             preview.push_str(&format!(
-                "{label}\n{}\n\n",
+                "{}\n{}\n\n",
+                lang.text(label),
                 serde_json::to_string_pretty(value).unwrap_or_default()
             ));
         }
     }
     if !previous.is_empty() {
-        preview.push_str(&format!("작업 내용\n{previous}"));
+        preview.push_str(&lang.format("작업 내용\n{previous}", &[&previous]));
     }
     let complete = preview.len() <= state::MAX_BODY
         && !previous.contains("[화면 표시 생략]")
@@ -1910,6 +2040,179 @@ fn install_korean_font(ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_and_theme_switch_at_minimum_size_without_changing_content() {
+        use crate::preferences::Theme;
+        use egui_kittest::{Harness, kittest::Queryable};
+        for zoom in [1.0, 1.5] {
+            for language in [Language::Korean, Language::English] {
+                for theme in [Theme::Dark, Theme::Light] {
+                    let cc = eframe::CreationContext::_new_kittest(egui::Context::default());
+                    let settings = Settings {
+                        language,
+                        theme,
+                        ..Default::default()
+                    };
+                    let mut app = MiniApp::new(&cc, settings, "unused".into());
+                    app.show_settings = true;
+                    app.busy = true; // Appearance changes must work during a running task.
+                    app.prompt = "원본 prompt {text}".into();
+                    app.transcript.put("user", "나", "설정", false, false);
+                    app.status = "완료 · 15초".into();
+                    let mut harness = Harness::builder()
+                        .with_size(egui::vec2(560.0, 400.0))
+                        .build_ui_state(|ui, app: &mut MiniApp| app.main_ui(ui), app);
+                    crate::preferences::configure(&harness.ctx, theme);
+                    harness.ctx.set_zoom_factor(zoom);
+                    harness.run();
+                    let labels = ["언어", "테마", "작업 폴더", "모델", "추론"]
+                        .map(|key| harness.get_by_label(language.text(key)).rect());
+                    for label in &labels[1..] {
+                        assert!(
+                            (label.min.x - labels[0].min.x).abs() < 1.0,
+                            "label columns: {labels:?}"
+                        );
+                    }
+                    let korean = harness.get_by_label("한국어").rect();
+                    let english = harness.get_by_label("English").rect();
+                    let light = harness.get_by_label(language.text("라이트")).rect();
+                    let dark = harness.get_by_label(language.text("다크")).rect();
+                    assert!((korean.min.x - light.min.x).abs() < 1.0);
+                    assert!((english.max.x - dark.max.x).abs() < 1.0);
+                    assert!((korean.width() - english.width()).abs() < 1.0);
+                    assert!((light.width() - dark.width()).abs() < 1.0);
+                    let folder = harness
+                        .get_by(|node| {
+                            node.role() == egui::accesskit::Role::TextInput
+                                && node.value().as_deref()
+                                    == Some(harness.state().settings.cwd.as_str())
+                        })
+                        .rect();
+                    assert!(
+                        (folder.min.x - korean.min.x).abs() < 1.0,
+                        "folder: {folder:?}, language: {korean:?}"
+                    );
+                    assert!(
+                        (folder.max.x - english.max.x).abs() < 1.0,
+                        "folder: {folder:?}, language: {english:?}"
+                    );
+                    let click = |h: &mut Harness<MiniApp>, label: &str| {
+                        let rect = h.get_by_label(label).rect();
+                        assert!(
+                            rect.min.x >= 0.0 && rect.max.x <= 561.0 && rect.max.y <= 401.0,
+                            "{label}: {rect:?}"
+                        );
+                        let point = rect.center() / h.ctx.pixels_per_point();
+                        h.hover_at(point);
+                        h.run();
+                        h.drag_at(point);
+                        h.run();
+                        h.drop_at(point);
+                        h.run();
+                    };
+                    let other_language = if language == Language::Korean {
+                        Language::English
+                    } else {
+                        Language::Korean
+                    };
+                    click(
+                        &mut harness,
+                        if other_language == Language::English {
+                            "English"
+                        } else {
+                            "한국어"
+                        },
+                    );
+                    assert_eq!(harness.state().settings.language, other_language);
+                    harness.get_by_label(other_language.text("테마"));
+                    let other_theme = if theme == Theme::Dark {
+                        Theme::Light
+                    } else {
+                        Theme::Dark
+                    };
+                    click(
+                        &mut harness,
+                        other_language.text(if other_theme == Theme::Light {
+                            "라이트"
+                        } else {
+                            "다크"
+                        }),
+                    );
+                    assert_eq!(harness.state().settings.theme, other_theme);
+                    assert_eq!(
+                        harness.ctx.global_style().visuals.dark_mode,
+                        other_theme == Theme::Dark
+                    );
+                    assert!(harness.state().busy);
+                    assert_eq!(harness.state().prompt, "원본 prompt {text}");
+                    assert_eq!(harness.state().transcript.messages[0].body, "설정");
+                    assert_eq!(harness.state().status, "완료 · 15초");
+                    harness.key_press(egui::Key::Escape);
+                    harness.run();
+                    assert!(!harness.state().show_settings);
+                    harness.get_by_label(other_language.message("완료 · 15초").as_ref());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn appearance_controls_work_with_keyboard_focus() {
+        use egui_kittest::{Harness, kittest::Queryable};
+        let cc = eframe::CreationContext::_new_kittest(egui::Context::default());
+        let mut app = MiniApp::new(&cc, Settings::default(), "unused".into());
+        app.show_settings = true;
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(560.0, 400.0))
+            .build_ui_state(|ui, app: &mut MiniApp| app.main_ui(ui), app);
+        crate::preferences::configure(&harness.ctx, crate::preferences::Theme::Dark);
+        harness.run();
+        harness.get_by_label("English").focus();
+        harness.run();
+        harness.key_press(egui::Key::Space);
+        harness.run();
+        assert_eq!(harness.state().settings.language, Language::English);
+        harness.get_by_label("Light").focus();
+        harness.run();
+        harness.key_press(egui::Key::Enter);
+        harness.run();
+        assert_eq!(
+            harness.state().settings.theme,
+            crate::preferences::Theme::Light
+        );
+    }
+
+    #[test]
+    fn approval_language_changes_preserve_payload_and_block_incomplete_actions() {
+        for lang in [Language::Korean, Language::English] {
+            let payload = "echo '한글 작업 / {value}'";
+            let (text, complete) =
+                approval_preview(&json!({"command":payload, "cwd":"/프로젝트"}), "", lang);
+            assert!(complete);
+            assert!(text.starts_with(lang.text("실행할 명령")));
+            assert!(text.contains(payload) && text.contains("/프로젝트"));
+            assert!(
+                !approval_preview(
+                    &json!({"command":"x".repeat(state::MAX_BODY + 1)}),
+                    "",
+                    lang
+                )
+                .1
+            );
+        }
+        let cc = eframe::CreationContext::_new_kittest(egui::Context::default());
+        let mut app = MiniApp::new(&cc, Settings::default(), "unused".into());
+        app.server_request(json!({"id":1,"method":"item/commandExecution/requestApproval","params":{"command":"echo '원본'"}}));
+        app.settings.language = Language::English;
+        let _ = cc
+            .egui_ctx
+            .run_ui(Default::default(), |ui| app.approval_ui(ui.ctx()));
+        assert_eq!(app.approvals.len(), 1);
+        assert!(app.approvals[0].preview.starts_with("Command"));
+        assert!(app.approvals[0].preview.contains("echo '원본'"));
+        assert!(app.approvals[0].preview_complete);
+    }
 
     #[test]
     fn project_can_be_created_from_navigation_and_edited() {
@@ -2082,11 +2385,19 @@ mod tests {
         let (text, complete) = approval_preview(
             &json!({"command":"ls", "cwd":"/tmp", "threadId":"private-id", "additionalPermissions":{"network":true}}),
             "",
+            Language::Korean,
         );
         assert!(complete);
         assert!(text.contains("ls") && text.contains("/tmp") && text.contains("network"));
         assert!(!text.contains("private-id"));
-        assert!(!approval_preview(&json!({"command":"x".repeat(state::MAX_BODY+1)}), "").1);
+        assert!(
+            !approval_preview(
+                &json!({"command":"x".repeat(state::MAX_BODY+1)}),
+                "",
+                Language::Korean
+            )
+            .1
+        );
     }
 
     #[test]
