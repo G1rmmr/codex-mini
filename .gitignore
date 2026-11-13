@@ -1,0 +1,23 @@
+/target/
+/dist/
+
+# Local sessions and credentials. Keep them local.
+/.codex/
+/.config/
+/.rtk/
+/.env
+/.env.*
+!/.env.example
+/settings.json
+/auth.json
+/usage/
+*.log
+*.sqlite*
+*.db
+*.db-*
+*.tmp
+*.bak
+*~
+.DS_Store
+__pycache__/
+*.py[cod]
