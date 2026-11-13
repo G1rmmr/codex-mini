@@ -25,7 +25,7 @@ git push origin v0.1.0
 
 A tag must match the package version and point to a commit on `main`. The workflow repeats the checks, builds all four archives, then publishes a GitHub Release with `SHA256SUMS`. Only the publishing job has write permission. Existing releases are not overwritten.
 
-Windows builds are unsigned. macOS bundles are ad-hoc signed, not Developer ID signed or notarized. OS security prompts may appear. Distribution signing needs the maintainer's certificates; none are stored in this repository.
+Windows builds statically link the MSVC runtime. No separate Visual C++ runtime installation is required. Windows builds are unsigned. macOS bundles are ad-hoc signed, not Developer ID signed or notarized. OS security prompts may appear. Distribution signing needs the maintainer's certificates; none are stored in this repository.
 
 For local packaging, install `cargo-about` 0.9.3, then generate notices before packaging:
 
