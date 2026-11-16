@@ -16,7 +16,7 @@ pub enum Event {
     Closed(String),
 }
 
-/// All I/O blocks on worker threads, never on egui. Both queues are bounded.
+/// All I/O blocks on worker threads, never on the UI thread. Both queues are bounded.
 pub struct Backend {
     child: Child,
     #[cfg(windows)]

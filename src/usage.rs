@@ -10,6 +10,69 @@ use std::{
 
 pub const KEEP: usize = 200;
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LimitWindow {
+    pub used_percent: f64,
+    pub window_duration_mins: Option<u64>,
+    pub resets_at: Option<u64>,
+}
+#[derive(Default)]
+pub struct LimitBucket {
+    pub label: String,
+    pub primary: Option<LimitWindow>,
+    pub secondary: Option<LimitWindow>,
+}
+#[derive(Default)]
+pub struct RateLimits {
+    pub buckets: std::collections::BTreeMap<String, LimitBucket>,
+    pub received: bool,
+    pub error: Option<String>,
+}
+impl RateLimits {
+    pub fn update(&mut self, value: &Value, replace: bool) {
+        if replace {
+            self.buckets.clear();
+        }
+        if let Some(buckets) = value["rateLimitsByLimitId"].as_object() {
+            for (id, bucket) in buckets.iter().take(32) {
+                self.bucket(id, bucket);
+            }
+        } else if value["rateLimits"].is_object() {
+            let bucket = &value["rateLimits"];
+            self.bucket(bucket["limitId"].as_str().unwrap_or("codex"), bucket);
+        }
+        self.received = true;
+        self.error = None;
+    }
+    fn bucket(&mut self, id: &str, value: &Value) {
+        if !value.is_object()
+            || id.len() > 256
+            || (self.buckets.len() >= 32 && !self.buckets.contains_key(id))
+        {
+            return;
+        }
+        let bucket = self.buckets.entry(id.into()).or_default();
+        bucket.label = value["limitName"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(if id == "codex" { "Codex" } else { id })
+            .chars()
+            .take(120)
+            .collect();
+        for (key, slot) in [
+            ("primary", &mut bucket.primary),
+            ("secondary", &mut bucket.secondary),
+        ] {
+            if let Some(window) = value.get(key) {
+                *slot = serde_json::from_value::<LimitWindow>(window.clone())
+                    .ok()
+                    .filter(|w| w.used_percent.is_finite());
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Tokens {
@@ -66,6 +129,7 @@ struct Active {
 pub struct Meter {
     pub records: VecDeque<Record>,
     pub total: Option<Tokens>,
+    pub context: Option<(u64, u64)>,
     thread: String,
     active: Option<Active>,
 }
@@ -73,6 +137,7 @@ impl Meter {
     /// Switch the live conversation while retaining the shared, bounded history.
     pub fn swap_current(&mut self, other: &mut Self) {
         std::mem::swap(&mut self.total, &mut other.total);
+        std::mem::swap(&mut self.context, &mut other.context);
         std::mem::swap(&mut self.thread, &mut other.thread);
         std::mem::swap(&mut self.active, &mut other.active);
     }
@@ -80,6 +145,7 @@ impl Meter {
     pub fn attach(&mut self, thread: &str, fresh: bool) {
         self.thread = thread.into();
         self.total = fresh.then(Tokens::default);
+        self.context = None;
         self.active = None;
     }
     pub fn begin(&mut self, project: &str, model: &str, effort: &str, profile: &str) {
@@ -142,6 +208,10 @@ impl Meter {
             return None;
         }
         self.total = Some(total.clone());
+        self.context = params["tokenUsage"]["modelContextWindow"]
+            .as_u64()
+            .filter(|limit| *limit > 0)
+            .map(|limit| (last.total_tokens, limit));
         let a = self.active.as_mut()?;
         let turn = params["turnId"].as_str()?;
         if a.record.turn.is_empty() {
@@ -162,6 +232,15 @@ impl Meter {
     }
     pub fn current(&self) -> Option<&Record> {
         self.active.as_ref().map(|a| &a.record)
+    }
+    pub fn elapsed_secs(&self) -> u64 {
+        self.active.as_ref().map_or(0, |a| {
+            if a.record.status == "inProgress" {
+                a.started.elapsed().as_secs()
+            } else {
+                a.record.elapsed_secs
+            }
+        })
     }
     pub fn finish(&mut self, status: &str) -> Option<Record> {
         let a = self.active.as_mut()?;
@@ -315,6 +394,79 @@ pub fn number(n: u64) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn rate_updates_merge_buckets_without_inventing_missing_windows() {
+        let mut limits = RateLimits::default();
+        limits.update(&json!({"rateLimitsByLimitId":{
+            "codex":{"primary":{"usedPercent":25,"windowDurationMins":300},"secondary":{"usedPercent":50,"windowDurationMins":10080}},
+            "review":{"limitName":"Review","primary":{"usedPercent":10}}
+        }}), true);
+        limits.update(&json!({"rateLimits":{"limitId":"codex","primary":{"usedPercent":35,"windowDurationMins":300}}}), false);
+        assert_eq!(limits.buckets.len(), 2);
+        assert_eq!(
+            limits.buckets["codex"]
+                .primary
+                .as_ref()
+                .unwrap()
+                .used_percent,
+            35.
+        );
+        assert_eq!(
+            limits.buckets["codex"]
+                .secondary
+                .as_ref()
+                .unwrap()
+                .used_percent,
+            50.
+        );
+        assert!(
+            limits.buckets["review"]
+                .primary
+                .as_ref()
+                .unwrap()
+                .resets_at
+                .is_none()
+        );
+        limits.update(&json!({"rateLimits":{"limitId":"codex","primary":null,"secondary":{"windowDurationMins":300}}}), true);
+        assert_eq!(limits.buckets.len(), 1);
+        assert!(limits.buckets["codex"].primary.is_none());
+        assert!(limits.buckets["codex"].secondary.is_none());
+    }
+
+    #[test]
+    fn current_tokens_and_context_update_before_turn_completion() {
+        let mut meter = Meter::default();
+        meter.attach("t", true);
+        meter.begin("p", "m", "medium", "base");
+        meter.turn("r");
+        let mut update = event(100, 100);
+        update["tokenUsage"]["modelContextWindow"] = json!(128000);
+        assert!(meter.update(&update).is_none());
+        assert_eq!(
+            meter
+                .current()
+                .unwrap()
+                .tokens
+                .as_ref()
+                .unwrap()
+                .input_tokens,
+            100
+        );
+        assert_eq!(meter.current().unwrap().status, "inProgress");
+        assert_eq!(meter.context, Some((105, 128000)));
+        assert!(meter.records.is_empty());
+        meter.update(&event(200, 100));
+        assert_eq!(
+            meter
+                .current()
+                .unwrap()
+                .tokens
+                .as_ref()
+                .unwrap()
+                .input_tokens,
+            200
+        );
+    }
     fn event(total: u64, last: u64) -> Value {
         json!({"threadId":"t","turnId":"r","tokenUsage":{"total":{"inputTokens":total,"cachedInputTokens":total/2,"outputTokens":10,"reasoningOutputTokens":4,"totalTokens":total+10},"last":{"inputTokens":last,"outputTokens":5,"totalTokens":last+5}}})
     }

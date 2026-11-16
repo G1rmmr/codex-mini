@@ -11,6 +11,17 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '11.0'
 
 jobs:
+  privacy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check source and commit privacy
+        run: python3 scripts/check-publication.py --history
+
   licenses:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -28,7 +39,7 @@ jobs:
           echo '3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4  /tmp/about.tar.gz' | sha256sum -c -
           tar -xzf /tmp/about.tar.gz -C /tmp
           mkdir -p dist
-          "/tmp/$asset/cargo-about" generate --locked --fail about.hbs -o dist/THIRD_PARTY_LICENSES.html
+          "/tmp/$asset/cargo-about" generate --locked --all-features --fail about.hbs -o dist/THIRD_PARTY_LICENSES.html
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dependency-licenses
@@ -37,7 +48,7 @@ jobs:
           retention-days: 14
 
   native:
-    needs: licenses
+    needs: [privacy, licenses]
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +65,8 @@ jobs:
             label: macos-aarch64
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +77,7 @@ jobs:
           python-version: '3.13'
       - name: Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libgl1-mesa-dev dbus-daemon
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libgl1-mesa-dev dbus-daemon xvfb
       - name: Install Rust and check host
         shell: bash
         run: |
@@ -83,6 +96,8 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Test
         run: cargo test --locked
+      - name: Check optional GPU renderer
+        run: cargo check --locked --features gpu
       - name: Linux tray and notification integration
         if: runner.os == 'Linux'
         run: dbus-run-session -- env CODEX_MINI_PRIVATE_BUS_TEST=1 cargo test --locked native_tray_activation_and_notification -- --ignored --nocapture
@@ -93,15 +108,51 @@ jobs:
       - name: Build Linux / macOS
         if: runner.os != 'Windows'
         run: ./scripts/build.sh
+      - name: Check release binary privacy
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import os, subprocess
+          exe = './dist/codex-mini' + ('.exe' if os.name == 'nt' else '')
+          subprocess.run(['python', 'scripts/check-publication.py', '--binary', exe], check=True)
+          PYTHON
       - name: Smoke-test release executable
         shell: bash
         run: |
           python - <<'PYTHON'
           import os, subprocess
           exe = './dist/codex-mini' + ('.exe' if os.name == 'nt' else '')
-          result = subprocess.run([exe, '--help'], check=True, capture_output=True, text=True, timeout=15)
+          result = subprocess.run([exe, '--help'], check=True, capture_output=True, text=True, encoding="utf-8", timeout=15)
           assert 'Enter sends; Shift+Enter' in result.stdout, result.stdout + result.stderr
           PYTHON
+      - name: Render Linux UI with the software renderer
+        if: runner.os == 'Linux'
+        run: |
+          timeout 30s xvfb-run -a ./dist/codex-mini --ui-smoke dist/ui-dark.png
+          timeout 30s xvfb-run -a ./dist/codex-mini --ui-smoke dist/ui-light-compact.png --light --compact
+          timeout 30s xvfb-run -a ./dist/codex-mini --ui-smoke dist/ui-approval-compact.png --compact --approval
+          timeout 30s xvfb-run -a ./dist/codex-mini --ui-smoke dist/ui-login-compact.png --compact --login
+          timeout 30s xvfb-run -a ./dist/codex-mini --ui-smoke dist/ui-setup-compact.png --compact --setup
+          timeout 30s xvfb-run -a ./dist/codex-mini --ui-smoke dist/ui-settings.png --settings
+          timeout 30s xvfb-run -a ./dist/codex-mini --ui-smoke dist/ui-usage.png --usage
+      - name: Render Windows / macOS UI with the software renderer
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import os, subprocess, pathlib
+          exe = './dist/codex-mini' + ('.exe' if os.name == 'nt' else '')
+          for name, flags in [('ui-dark.png', []), ('ui-light-compact.png', ['--light', '--compact']), ('ui-approval-compact.png', ['--compact', '--approval']), ('ui-login-compact.png', ['--compact', '--login']), ('ui-setup-compact.png', ['--compact', '--setup']), ('ui-settings.png', ['--settings']), ('ui-usage.png', ['--usage'])]:
+              output = pathlib.Path('dist') / name
+              subprocess.run([exe, '--ui-smoke', str(output), *flags], check=True, timeout=30)
+              assert output.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+          PYTHON
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-review-${{ matrix.label }}
+          path: dist/ui-*.png
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dependency-licenses

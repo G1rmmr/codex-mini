@@ -167,7 +167,7 @@ pub fn rewrite(command: &str, rtk: &Path) -> Option<String> {
     ))
 }
 
-/// Standalone hook mode does not start egui or access login credentials.
+/// Standalone hook mode does not start the GUI or access login credentials.
 pub fn run_hook(rtk: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
     io::stdin().take(1024 * 1024).read_to_string(&mut input)?;

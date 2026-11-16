@@ -1,6 +1,6 @@
-//! Native shell services. Callbacks wake egui; no polling or per-frame OS I/O.
+//! Native shell services. Callbacks wake Iced; no polling or per-frame OS I/O.
 use crate::i18n::Language;
-use eframe::egui;
+use crate::runtime::Wake;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use tray_icon::{TrayIcon, menu::MenuItem};
 
@@ -15,7 +15,7 @@ pub enum Action {
 #[derive(Clone)]
 struct Events {
     tx: SyncSender<Action>,
-    ctx: egui::Context,
+    ctx: Wake,
 }
 
 impl Events {
@@ -48,7 +48,7 @@ pub struct Desktop {
 }
 
 impl Desktop {
-    pub fn new(ctx: &egui::Context, lang: Language) -> Self {
+    pub fn new(ctx: &Wake, lang: Language) -> Self {
         #[cfg(not(test))]
         {
             Self::native(ctx, lang)
@@ -59,7 +59,7 @@ impl Desktop {
         }
     }
 
-    fn empty(ctx: &egui::Context, lang: Language) -> Self {
+    pub(crate) fn empty(ctx: &Wake, lang: Language) -> Self {
         let (tx, actions) = mpsc::sync_channel(16);
         Self {
             tray: None,
@@ -80,7 +80,7 @@ impl Desktop {
     }
 
     #[cfg_attr(all(test, not(target_os = "linux")), allow(dead_code))]
-    pub fn native(ctx: &egui::Context, lang: Language) -> Self {
+    pub fn native(ctx: &Wake, lang: Language) -> Self {
         use tray_icon::{
             Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
             menu::{Menu, MenuEvent, PredefinedMenuItem},
@@ -254,7 +254,7 @@ fn deliver(notice: &Notice) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn deliver(notice: &Notice) -> Result<(), String> {
     // Use a separate OS process: never replace the Cocoa/winit app delegate or
-    // run a second Cocoa loop in egui. Text is argv data, never AppleScript code.
+    // run a second Cocoa loop in Iced. Text is argv data, never AppleScript code.
     use std::{
         process::{Command, Stdio},
         time::{Duration, Instant},
@@ -393,7 +393,7 @@ mod native_tests {
             .unwrap()
             .build()
             .unwrap();
-        let mut desktop = Desktop::native(&egui::Context::default(), Language::Korean);
+        let mut desktop = Desktop::native(&Wake::default(), Language::Korean);
         assert!(desktop.has_tray(), "{:?}", desktop.last_error);
         let name = items.recv_timeout(Duration::from_secs(5)).unwrap();
         let proxy = zbus::blocking::Proxy::new(
@@ -424,7 +424,7 @@ mod native_tests {
             .release_name("org.kde.StatusNotifierWatcher")
             .unwrap();
         drop(service);
-        let fallback = Desktop::native(&egui::Context::default(), Language::Korean);
+        let fallback = Desktop::native(&Wake::default(), Language::Korean);
         assert!(
             !fallback.has_tray(),
             "a missing host must retain the taskbar fallback"

@@ -1,15 +1,20 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-mod app;
+mod controller;
 mod desktop;
 mod efficiency;
 mod global;
 mod i18n;
+mod icons;
 mod platform;
 mod preferences;
 mod recommendation;
+mod resources;
+mod runtime;
 mod state;
 mod transport;
+mod typography;
+mod ui;
 mod usage;
 
 use serde_json::json;
@@ -24,6 +29,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let path = std::env::args().nth(2).ok_or("missing RTK path")?;
         return efficiency::run_hook(std::path::Path::new(&path));
     }
+    if std::env::args().nth(1).as_deref() == Some("--ui-smoke") {
+        let output = std::env::args()
+            .nth(2)
+            .ok_or("--ui-smoke requires an output PNG path")?;
+        let mut settings = state::Settings::default();
+        if std::env::args().any(|a| a == "--light") {
+            settings.theme = preferences::Theme::Light;
+        }
+        return ui::run(settings, "unused".into(), Some(output.into()), None).map_err(Into::into);
+    }
     let mut settings = state::Settings::load();
     let mut binary = std::env::var("CODEX_MINI_CODEX").unwrap_or_else(|_| {
         if settings.codex_binary.is_empty() {
@@ -33,12 +48,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     let mut diagnose = false;
+    let mut benchmark = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--cwd" => settings.cwd = args.next().ok_or("--cwd requires a folder")?,
             "--codex" => binary = args.next().ok_or("--codex requires an executable")?,
             "--diagnose" => diagnose = true,
+            "--benchmark-idle" => {
+                benchmark = Some(
+                    args.next()
+                        .ok_or("--benchmark-idle requires a report path")?
+                        .into(),
+                );
+            }
             "-h" | "--help" => {
                 println!(
                     "Codex Mini — lightweight native Codex GUI\n\n  codex-mini [--cwd FOLDER] [--codex EXECUTABLE]\n  codex-mini --diagnose  (handshake + account/model check; no inference)\n\nUses your existing Codex CLI login. Enter sends; Shift+Enter inserts a newline."
@@ -51,27 +74,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if diagnose {
         return diagnostic(&binary, &settings.cwd);
     }
-    let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Codex Mini")
-            .with_app_id("codex-mini")
-            .with_icon(eframe::egui::IconData {
-                rgba: include_bytes!("../assets/codex-mini-64.rgba").to_vec(),
-                width: 64,
-                height: 64,
-            })
-            .with_inner_size([720.0, 520.0])
-            .with_min_inner_size([560.0, 400.0]),
-        renderer: eframe::Renderer::Glow,
-        multisampling: 0,
-        centered: true,
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Codex Mini",
-        options,
-        Box::new(move |cc| Ok(Box::new(app::MiniApp::new(cc, settings, binary)))),
-    )?;
+    if benchmark.is_some() && std::env::var_os("XDG_CONFIG_HOME").is_none() {
+        return Err("--benchmark-idle requires an isolated XDG_CONFIG_HOME directory".into());
+    }
+    ui::run(settings, binary, None, benchmark)?;
     Ok(())
 }
 

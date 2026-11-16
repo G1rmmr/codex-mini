@@ -14,6 +14,8 @@ THREAD = os.environ.get("CODEX_MINI_MOCK_THREAD", "mock-thread")
 skill_enabled = True
 active_turn = None
 user_serial = 0
+signed_in = True
+login_pending = False
 for line in sys.stdin:
     message = json.loads(line)
     method = message.get("method")
@@ -23,7 +25,26 @@ for line in sys.stdin:
         assert params["clientInfo"]["name"] == "codex_mini"
         send({"id": request_id, "result": {"userAgent": "mock"}})
     elif method == "account/read":
-        send({"id": request_id, "result": {"account": {"type": "chatgpt", "planType": "test"}}})
+        send({"id": request_id, "result": {"account": {"type": "chatgpt", "planType": "test"} if signed_in else None, "requiresOpenaiAuth": True}})
+    elif method == "account/rateLimits/read":
+        send({"id": request_id, "result": {"rateLimits": {"limitId": "codex", "primary": {"usedPercent": 25, "windowDurationMins": 300, "resetsAt": 1999999999}, "secondary": {"usedPercent": 40, "windowDurationMins": 10080, "resetsAt": 1999999999}}}})
+    elif method == "test/sign_out":
+        signed_in = False
+        send({"method": "account/updated", "params": {"authMode": None}})
+    elif method == "account/login/start":
+        assert params == {"type": "chatgpt"}
+        login_pending = True
+        send({"id": request_id, "result": {"type": "chatgpt", "loginId": "test-login", "authUrl": "https://auth.openai.com/test-login"}})
+    elif method == "test/login_complete":
+        assert login_pending
+        signed_in = True
+        login_pending = False
+        send({"method": "account/login/completed", "params": {"loginId": "test-login", "success": True, "error": None}})
+    elif method == "account/login/cancel":
+        assert params == {"loginId": "test-login"} and login_pending
+        login_pending = False
+        send({"id": request_id, "result": {}})
+        send({"method": "account/login/completed", "params": {"loginId": "test-login", "success": False, "error": "Login cancelled"}})
     elif method == "config/read":
         send({"id":request_id,"result":{"config":{},"origins":{}}})
     elif method == "skills/list":

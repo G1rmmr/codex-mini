@@ -86,7 +86,14 @@ impl Transcript {
             }
             "commandExecution" => self.put(
                 id,
-                &format!("명령 · {status}"),
+                &format!(
+                    "명령 · {}",
+                    if item["exitCode"].as_i64().is_some_and(|code| code != 0) {
+                        "failed"
+                    } else {
+                        status
+                    }
+                ),
                 &format!(
                     "{}\n\n{}",
                     string(item, "command"),
@@ -164,12 +171,13 @@ pub struct Project {
     pub efficiency: crate::efficiency::Options,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub language: crate::i18n::Language,
     pub theme: crate::preferences::Theme,
     pub notifications: bool,
+    pub max_concurrent_tasks: usize,
     pub cwd: String,
     pub model: String,
     pub effort: String,
@@ -186,6 +194,7 @@ impl Default for Settings {
             language: Default::default(),
             theme: Default::default(),
             notifications: true,
+            max_concurrent_tasks: 1,
             cwd: std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
                 .display()
@@ -284,14 +293,8 @@ impl Settings {
     #[cfg(not(test))]
     pub fn save(&self) -> Result<(), String> {
         let path = Self::path().ok_or("설정 저장 경로가 없습니다.")?;
-        std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-        let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
-        std::fs::write(
-            &tmp,
-            serde_json::to_vec_pretty(self).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
-        std::fs::rename(tmp, path).map_err(|e| e.to_string())
+        let bytes = serde_json::to_vec_pretty(self).map_err(|e| e.to_string())?;
+        write_settings(&path, &bytes).map_err(|e| e.to_string())
     }
     pub fn remember(&mut self, id: &str, title: &str) {
         self.recent.retain(|r| r.id != id);
@@ -323,6 +326,41 @@ impl Settings {
     }
 }
 
+fn write_settings(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let directory = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("missing settings directory"))?;
+    std::fs::create_dir_all(directory)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temporary = path.with_extension(format!("{}-{nonce}.tmp", std::process::id()));
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        file.write_all(bytes)?;
+        drop(file);
+        std::fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
 pub fn turn_params(thread: &str, prompt: &str, model: &str, effort: &str) -> Value {
     let mut p =
         json!({"threadId":thread,"input":[{"type":"text","text":prompt,"text_elements":[]}]});
@@ -338,6 +376,50 @@ pub fn turn_params(thread: &str, prompt: &str, model: &str, effort: &str) -> Val
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn settings_replace_is_private_and_does_not_leave_temporary_files() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "mini-private-settings-{}-{nonce}",
+            std::process::id()
+        ));
+        let path = directory.join("settings.json");
+        write_settings(&path, b"first").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        write_settings(&path, b"replacement").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            assert_eq!(
+                std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&directory).unwrap();
+    }
+    #[test]
+    fn a_nonzero_exit_code_is_displayed_as_a_failed_command() {
+        let mut transcript = Transcript::default();
+        transcript.item(&json!({"id":"command","type":"commandExecution","status":"completed","exitCode":1,"command":"cargo test","aggregatedOutput":"test failed"}));
+        assert!(transcript.messages[0].title.contains("failed"));
+        assert!(transcript.messages[0].tool);
+    }
+
     #[test]
     fn projects_migrate_and_keep_separate_recent_histories() {
         let mut settings: Settings = serde_json::from_value(

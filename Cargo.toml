@@ -7,7 +7,11 @@ license = "MIT"
 rust-version = "1.92"
 
 [dependencies]
-eframe = { version = "=0.35.0", default-features = false, features = ["default_fonts", "glow", "x11"] }
+iced = { version = "=0.14.0", default-features = false, features = ["tiny-skia", "tokio", "markdown", "canvas", "advanced", "advanced-shaping", "x11", "wayland"] }
+tokio = { version = "1", features = ["time"] }
+sysinfo = { version = "=0.37.2", default-features = false, features = ["system"] }
+open = "5"
+png = "=0.18.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml_edit = "=0.22.27"
@@ -23,8 +27,8 @@ libc = "0.2"
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_UI_Shell"] }
 
 [features]
-ui-review = ["egui_kittest/wgpu", "egui_kittest/snapshot"]
-wayland = ["eframe/wayland"]
+gpu = ["iced/wgpu"]
+wayland = []
 
 [profile.release]
 opt-level = "s"
@@ -34,7 +38,3 @@ strip = true
 
 [profile.dev]
 debug = 0
-
-
-[dev-dependencies]
-egui_kittest = { version = "=0.35.0", default-features = false }
