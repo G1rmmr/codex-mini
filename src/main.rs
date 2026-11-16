@@ -1,11 +1,13 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod desktop;
 mod efficiency;
 mod global;
 mod i18n;
 mod platform;
 mod preferences;
+mod recommendation;
 mod state;
 mod transport;
 mod usage;
@@ -39,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--diagnose" => diagnose = true,
             "-h" | "--help" => {
                 println!(
-                    "Codex Mini — lightweight native Codex GUI\n\n  codex-mini [--cwd FOLDER] [--codex EXECUTABLE]\n  codex-mini --diagnose  (handshake + account/model check; no inference)\n\nUses your existing Codex CLI login. Ctrl+Enter sends; Enter inserts a newline."
+                    "Codex Mini — lightweight native Codex GUI\n\n  codex-mini [--cwd FOLDER] [--codex EXECUTABLE]\n  codex-mini --diagnose  (handshake + account/model check; no inference)\n\nUses your existing Codex CLI login. Enter sends; Shift+Enter inserts a newline."
                 );
                 return Ok(());
             }

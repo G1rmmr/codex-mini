@@ -34,13 +34,13 @@ pub fn configure(ctx: &egui::Context, theme: Theme) {
         };
         let canvas = rgb([25, 26, 29], [245, 246, 248]);
         let surface = rgb([34, 35, 39], [255, 255, 255]);
-        let border = rgb([61, 63, 69], [167, 172, 182]);
+        let border = rgb([64, 68, 77], [174, 181, 193]);
         let muted = rgb([190, 194, 203], [80, 87, 99]);
         let hover = rgb([49, 51, 57], [224, 229, 237]);
         style.visuals.panel_fill = canvas;
         style.visuals.window_fill = surface;
         style.visuals.extreme_bg_color = canvas;
-        style.visuals.selection.bg_fill = rgb([67, 77, 94], [47, 69, 102]);
+        style.visuals.selection.bg_fill = rgb([49, 76, 107], [40, 74, 116]);
         style.visuals.selection.stroke = egui::Stroke::new(1.0, Color32::WHITE);
         let text = rgb([239, 240, 243], [28, 33, 41]);
         // A global override also overrides selected RichText in buttons.
@@ -48,6 +48,7 @@ pub fn configure(ctx: &egui::Context, theme: Theme) {
         style.visuals.widgets.noninteractive.fg_stroke.color = text;
         style.visuals.weak_text_color = Some(muted);
         style.visuals.error_fg_color = rgb([255, 153, 153], [168, 29, 45]);
+        style.visuals.warn_fg_color = rgb([238, 194, 116], [133, 82, 12]);
         style.visuals.disabled_alpha = 0.72;
         style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, border);
         style.visuals.widgets.inactive.weak_bg_fill = surface;
@@ -57,9 +58,9 @@ pub fn configure(ctx: &egui::Context, theme: Theme) {
         style.visuals.widgets.hovered.bg_fill = hover;
         style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, muted);
         style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, muted);
-        style.spacing.item_spacing = egui::vec2(5.0, 4.0);
-        style.spacing.button_padding = egui::vec2(6.0, 2.0);
-        style.spacing.interact_size.y = 20.0;
+        style.spacing.item_spacing = egui::vec2(7.0, 5.0);
+        style.spacing.button_padding = egui::vec2(8.0, 3.0);
+        style.spacing.interact_size.y = 24.0;
         for widget in [
             &mut style.visuals.widgets.inactive,
             &mut style.visuals.widgets.hovered,
@@ -69,10 +70,10 @@ pub fn configure(ctx: &egui::Context, theme: Theme) {
             widget.fg_stroke.color = text;
         }
         for (kind, size) in [
-            (egui::TextStyle::Body, 12.0),
-            (egui::TextStyle::Button, 11.0),
-            (egui::TextStyle::Small, 10.0),
-            (egui::TextStyle::Heading, 13.0),
+            (egui::TextStyle::Body, 13.0),
+            (egui::TextStyle::Button, 12.0),
+            (egui::TextStyle::Small, 11.0),
+            (egui::TextStyle::Heading, 16.0),
         ] {
             style
                 .text_styles
@@ -114,7 +115,12 @@ mod tests {
             let style = ctx.style_of(theme);
             let v = &style.visuals;
             for background in [v.panel_fill, v.window_fill] {
-                for foreground in [v.text_color(), v.weak_text_color(), v.error_fg_color] {
+                for foreground in [
+                    v.text_color(),
+                    v.weak_text_color(),
+                    v.error_fg_color,
+                    v.warn_fg_color,
+                ] {
                     assert!(
                         contrast(foreground, background) >= 4.5,
                         "{theme:?}: {foreground:?} / {background:?}"
