@@ -4,7 +4,7 @@ use egui_kittest::{Harness, kittest::Queryable};
 fn fixture() -> MiniApp {
     let cc = eframe::CreationContext::_new_kittest(egui::Context::default());
     let settings = Settings {
-        cwd: "/tmp".into(),
+        cwd: crate::transport::test_cwd().into(),
         ..Default::default()
     };
     let mut app = MiniApp::new(
@@ -14,7 +14,7 @@ fn fixture() -> MiniApp {
     );
     app.settings.projects[0].name = "Project A".into();
     app.settings
-        .add_project("Project B", "/tmp", "B instructions")
+        .add_project("Project B", crate::transport::test_cwd(), "B instructions")
         .unwrap();
     app.show_projects = true;
     app
@@ -200,7 +200,7 @@ fn inactive_project_keeps_unresolved_approvals_and_pending_requests() {
     let mut app = connected();
     app.server_request(
         json!({"id":"review", "method":"item/commandExecution/requestApproval",
-        "params":{"command":"echo review","cwd":"/tmp"}}),
+        "params":{"command":"echo review","cwd":crate::transport::test_cwd()}}),
     );
     let b = app.settings.projects[1].id;
     let pid = app.backend.as_ref().unwrap().pid();
@@ -226,6 +226,7 @@ fn connection_buttons_disconnect_reconnect_and_stop_work() {
     h.run();
     click(&mut h, "연결");
     pump(h.state_mut(), |a| a.ready && a.pending.is_empty());
+    #[cfg(unix)]
     let pid = h.state().backend.as_ref().unwrap().pid();
     h.state_mut().auto_accept = true;
     h.run();
@@ -290,7 +291,7 @@ fn project_editor_validates_cancels_and_reconnects_after_save() {
     click(&mut h, "저장");
     assert!(h.state().project_error.is_some());
     assert_eq!(h.state().backend.as_ref().unwrap().pid(), pid);
-    assert_eq!(h.state().settings.cwd, "/tmp");
+    assert_eq!(h.state().settings.cwd, crate::transport::test_cwd());
     h.key_press(egui::Key::Escape);
     h.run();
     assert!(h.state().project_editor.is_none());
