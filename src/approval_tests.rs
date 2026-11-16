@@ -25,7 +25,7 @@ fn connected_fixture(language: Language) -> MiniApp {
     app.backend = Some(
         Backend::start(
             &format!("{}/tests/mock_codex.py", env!("CARGO_MANIFEST_DIR")),
-            "/tmp",
+            crate::transport::test_cwd(),
             || {},
         )
         .unwrap(),

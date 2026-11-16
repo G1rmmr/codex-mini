@@ -25,12 +25,44 @@ pub struct Backend {
     pub incoming: Receiver<Event>,
 }
 
+#[cfg(test)]
+pub fn test_cwd() -> &'static str {
+    static CWD: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CWD.get_or_init(|| {
+        std::fs::canonicalize(std::env::temp_dir())
+            .expect("test temporary directory")
+            .to_string_lossy()
+            .into_owned()
+    })
+}
+
+#[cfg(test)]
+pub fn mock_command() -> Command {
+    let python = std::env::var("PYTHON")
+        .unwrap_or_else(|_| if cfg!(windows) { "python" } else { "python3" }.into());
+    let mut command = Command::new(python);
+    command
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/mock_codex.py"))
+        .env("PYTHONIOENCODING", "utf-8")
+        .current_dir(test_cwd());
+    command
+}
+
 impl Backend {
     pub fn start(
         binary: &str,
         cwd: &str,
         wake: impl Fn() + Send + Sync + 'static,
     ) -> io::Result<Self> {
+        #[cfg(test)]
+        let mut command = if std::path::Path::new(binary).file_name()
+            == Some(std::ffi::OsStr::new("mock_codex.py"))
+        {
+            mock_command()
+        } else {
+            Command::new(binary)
+        };
+        #[cfg(not(test))]
         let mut command = Command::new(binary);
         command
             .args(["app-server", "--listen", "stdio://"])

@@ -3245,7 +3245,7 @@ mod tests {
         app.backend = Some(
             Backend::start(
                 &format!("{}/tests/mock_codex.py", env!("CARGO_MANIFEST_DIR")),
-                "/tmp",
+                crate::transport::test_cwd(),
                 || {},
             )
             .unwrap(),
@@ -3277,7 +3277,7 @@ mod tests {
         app.settings.remember("t", "테스트 대화");
         let target = app
             .settings
-            .add_project("대상 프로젝트", "/tmp", "대상 지침")
+            .add_project("대상 프로젝트", crate::transport::test_cwd(), "대상 지침")
             .unwrap();
         let mut h = Harness::builder()
             .with_size(egui::vec2(720.0, 520.0))
@@ -3291,7 +3291,10 @@ mod tests {
         h.get_all_by_label("대상 프로젝트").last().unwrap().click();
         h.run();
         assert_eq!(h.state().settings.recent[0].project_id, Some(target));
-        assert_eq!(h.state().settings.recent[0].cwd, "/tmp");
+        assert_eq!(
+            h.state().settings.recent[0].cwd,
+            crate::transport::test_cwd()
+        );
         let app = h.state_mut();
         app.pending.insert(100, Pending::Delete("t".into()));
         app.loading = true;
@@ -3306,11 +3309,7 @@ mod tests {
     #[test]
     fn automatic_compaction_uses_last_usage_and_finishes_via_notifications() {
         let mut app = chat_fixture();
-        let mut command = std::process::Command::new("python3");
-        command.arg(format!(
-            "{}/tests/mock_codex.py",
-            env!("CARGO_MANIFEST_DIR")
-        ));
+        let command = crate::transport::mock_command();
         app.backend = Some(Backend::start_command(command, || {}).unwrap());
         app.ready = true;
         app.thread_id = Some("mock-thread".into());
@@ -3350,7 +3349,7 @@ mod tests {
         app.backend = Some(
             Backend::start(
                 &format!("{}/tests/mock_codex.py", env!("CARGO_MANIFEST_DIR")),
-                "/tmp",
+                crate::transport::test_cwd(),
                 || {},
             )
             .unwrap(),
@@ -3594,7 +3593,7 @@ mod tests {
         app.backend = Some(
             Backend::start(
                 &format!("{}/tests/mock_codex.py", env!("CARGO_MANIFEST_DIR")),
-                "/tmp",
+                crate::transport::test_cwd(),
                 || {},
             )
             .unwrap(),
@@ -3867,7 +3866,7 @@ mod tests {
             app.backend = Some(
                 Backend::start(
                     &format!("{}/tests/mock_codex.py", env!("CARGO_MANIFEST_DIR")),
-                    "/tmp",
+                    crate::transport::test_cwd(),
                     || {},
                 )
                 .unwrap(),
@@ -4381,9 +4380,9 @@ mod tests {
     fn live_worker() -> MiniApp {
         let mut app = chat_fixture();
         app.binary = format!("{}/tests/mock_codex.py", env!("CARGO_MANIFEST_DIR"));
-        app.settings.projects[0].cwd = "/tmp".into();
-        app.settings.cwd = "/tmp".into();
-        let mut command = std::process::Command::new(&app.binary);
+        app.settings.projects[0].cwd = crate::transport::test_cwd().into();
+        app.settings.cwd = crate::transport::test_cwd().into();
+        let mut command = crate::transport::mock_command();
         command.env("CODEX_MINI_MOCK_THREAD", "worker-a");
         app.backend = Some(Backend::start_command(command, || {}).unwrap());
         app.ready = true;
@@ -4500,7 +4499,7 @@ mod tests {
         let mut app = live_worker();
         let second = app
             .settings
-            .add_project("Second project", "/tmp", "")
+            .add_project("Second project", crate::transport::test_cwd(), "")
             .unwrap();
         let first_pid = app.backend.as_ref().unwrap().pid();
         app.show_projects = true;
@@ -4531,7 +4530,11 @@ mod tests {
         let first_pid = app.backend.as_ref().unwrap().pid();
         let second_project = app
             .settings
-            .add_project("Second project", "/tmp", "Second instructions")
+            .add_project(
+                "Second project",
+                crate::transport::test_cwd(),
+                "Second instructions",
+            )
             .unwrap();
         app.switch_project(second_project);
         assert_eq!(app.settings.active_project, Some(second_project));
@@ -4554,14 +4557,18 @@ mod tests {
     fn pending_thread_start_can_complete_after_navigating_away() {
         let mut app = chat_fixture();
         app.binary = format!("{}/tests/mock_codex.py", env!("CARGO_MANIFEST_DIR"));
-        app.settings.cwd = "/tmp".into();
-        app.settings.projects[0].cwd = "/tmp".into();
-        app.backend = Some(Backend::start(&app.binary, "/tmp", || {}).unwrap());
+        app.settings.cwd = crate::transport::test_cwd().into();
+        app.settings.projects[0].cwd = crate::transport::test_cwd().into();
+        app.backend =
+            Some(Backend::start(&app.binary, crate::transport::test_cwd(), || {}).unwrap());
         app.ready = true;
         app.prompt = "hold".into();
         app.submit();
         assert!(app.loading && app.thread_id.is_none());
-        let second = app.settings.add_project("Second", "/tmp", "").unwrap();
+        let second = app
+            .settings
+            .add_project("Second", crate::transport::test_cwd(), "")
+            .unwrap();
         app.switch_project(second);
         pump_until(&mut app, |app| {
             app.sessions[0].busy && app.sessions[0].turn_id.is_some()
@@ -4618,7 +4625,7 @@ mod tests {
         let a = app.settings.active_project.unwrap();
         let b = app
             .settings
-            .add_project("B", "/tmp", "프로젝트 B 지침")
+            .add_project("B", crate::transport::test_cwd(), "프로젝트 B 지침")
             .unwrap();
         app.prompt = "A의 작성 중 메시지".into();
         app.busy = true;
@@ -4627,7 +4634,7 @@ mod tests {
         assert_eq!(app.sessions.len(), 1);
         assert!(app.sessions[0].busy);
         assert!(app.prompt.is_empty());
-        let mut params = json!({"cwd":"/tmp"});
+        let mut params = json!({"cwd":crate::transport::test_cwd()});
         app.project_instructions(&mut params);
         assert_eq!(params["developerInstructions"], "프로젝트 B 지침");
         app.prompt = "B의 초안".into();
@@ -4741,12 +4748,16 @@ mod tests {
     #[test]
     fn approval_preview_shows_scope_and_flags_truncated_content() {
         let (text, complete) = approval_preview(
-            &json!({"command":"ls", "cwd":"/tmp", "threadId":"private-id", "additionalPermissions":{"network":true}}),
+            &json!({"command":"ls", "cwd":crate::transport::test_cwd(), "threadId":"private-id", "additionalPermissions":{"network":true}}),
             "",
             Language::Korean,
         );
         assert!(complete);
-        assert!(text.contains("ls") && text.contains("/tmp") && text.contains("network"));
+        assert!(
+            text.contains("ls")
+                && text.contains(crate::transport::test_cwd())
+                && text.contains("network")
+        );
         assert!(!text.contains("private-id"));
         assert!(
             !approval_preview(
