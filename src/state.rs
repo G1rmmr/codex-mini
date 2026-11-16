@@ -75,6 +75,13 @@ impl Transcript {
                             .join("\n")
                     })
                     .unwrap_or_default();
+                // Replace the immediate local echo with the server item in place.
+                // Repeated identical messages remain distinct through their client IDs.
+                if let Some(client_id) = item["clientId"].as_str()
+                    && let Some(message) = self.messages.iter_mut().find(|m| m.id == client_id)
+                {
+                    message.id = id.to_owned();
+                }
                 self.put(id, "나", &body, false, false);
             }
             "commandExecution" => self.put(
@@ -133,6 +140,10 @@ pub fn string<'a>(v: &'a Value, key: &str) -> &'a str {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Recent {
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub effort: String,
     pub id: String,
     pub title: String,
     pub cwd: String,
@@ -158,6 +169,7 @@ pub struct Project {
 pub struct Settings {
     pub language: crate::i18n::Language,
     pub theme: crate::preferences::Theme,
+    pub notifications: bool,
     pub cwd: String,
     pub model: String,
     pub effort: String,
@@ -173,6 +185,7 @@ impl Default for Settings {
         Self {
             language: Default::default(),
             theme: Default::default(),
+            notifications: true,
             cwd: std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
                 .display()
@@ -285,6 +298,8 @@ impl Settings {
         self.recent.insert(
             0,
             Recent {
+                model: self.model.clone(),
+                effort: self.effort.clone(),
                 id: id.to_owned(),
                 title: clipped(title, 100),
                 cwd: self.cwd.clone(),
@@ -362,6 +377,22 @@ mod tests {
         assert_eq!(restored.active().unwrap().instructions, "한글 지침");
         assert_eq!(restored.recent.len(), 40);
     }
+    #[test]
+    fn chat_model_and_effort_roundtrip_without_breaking_old_histories() {
+        let mut settings = Settings::default();
+        settings.prepare_projects();
+        settings.model = "chosen-model".into();
+        settings.effort = "high".into();
+        settings.remember("chat", "title");
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(restored.recent[0].model, "chosen-model");
+        assert_eq!(restored.recent[0].effort, "high");
+        let old: Recent =
+            serde_json::from_value(json!({"id":"old","title":"old","cwd":"/tmp"})).unwrap();
+        assert!(old.model.is_empty() && old.effort.is_empty());
+    }
+
     #[test]
     fn streams_reconcile_with_final_item_without_duplicate_text() {
         let mut t = Transcript::default();

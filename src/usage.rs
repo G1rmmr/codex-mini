@@ -70,6 +70,13 @@ pub struct Meter {
     active: Option<Active>,
 }
 impl Meter {
+    /// Switch the live conversation while retaining the shared, bounded history.
+    pub fn swap_current(&mut self, other: &mut Self) {
+        std::mem::swap(&mut self.total, &mut other.total);
+        std::mem::swap(&mut self.thread, &mut other.thread);
+        std::mem::swap(&mut self.active, &mut other.active);
+    }
+
     pub fn attach(&mut self, thread: &str, fresh: bool) {
         self.thread = thread.into();
         self.total = fresh.then(Tokens::default);
