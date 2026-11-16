@@ -1,4 +1,4 @@
-use eframe::egui::{self, RichText};
+use eframe::egui;
 use serde_json::Value;
 use std::{
     fs,
@@ -233,16 +233,14 @@ impl GlobalUi {
                 if self.pending.is_some(){ui.label(lang.text("설정 처리 중…"));return;}
                 let Some(d)=&mut self.docs else {if ui.button(lang.text("다시 불러오기")).clicked(){reload=true;}return;};
                 if !d.config_valid { ui.label(lang.text("config.toml 문법 오류가 있습니다. 고급 탭에서 수정하세요.")); }
-                ui.add_enabled_ui(idle && (d.config_valid || self.tab == 0 || self.tab == 4),|ui| {
+                let settings = ui.add_enabled_ui(idle && (d.config_valid || self.tab == 0 || self.tab == 4),|ui| {
                     match self.tab {
                         0=>{
-                            ui.label(lang.text("모든 프로젝트에 적용되는 공통 지침"));
                             ui.add(egui::Label::new(d.agents.path.display().to_string()).truncate()).on_hover_text(d.agents.path.display().to_string());
-                            ui.add(egui::TextEdit::multiline(&mut d.agents.text).desired_rows(12).desired_width(f32::INFINITY).char_limit(128*1024));
-                            if ui.add_enabled(d.agents.dirty(),egui::Button::new(lang.text("공통 지침 저장"))).clicked(){save=Some((d.agents.clone(),false));}
+                            ui.add(egui::TextEdit::multiline(&mut d.agents.text).desired_rows(12).desired_width(f32::INFINITY).char_limit(128*1024)).on_hover_text(lang.text("모든 프로젝트에 적용되는 공통 지침"));
+                            if ui.add_enabled(d.agents.dirty(),egui::Button::new(lang.text("공통 지침 저장"))).on_hover_text(lang.text("파일 저장 전 원본을 백업하며 외부 변경을 감지하면 저장을 중단합니다.")).clicked(){save=Some((d.agents.clone(),false));}
                         }
                         1=>{
-                            ui.label(lang.text("Codex 사용자 기본값 · 프로젝트 설정이나 관리 정책이 우선할 수 있습니다."));
                             let mut changed=false;
                             egui::Grid::new("global_defaults").num_columns(2).spacing([12.0,6.0]).show(ui,|ui| {
                                 for (key,label,choices) in [
@@ -251,39 +249,40 @@ impl GlobalUi {
                                     ("approval_policy",lang.text("승인 정책"),&["untrusted","on-request","never"]),
                                     ("sandbox_mode",lang.text("실행 권한"),&["read-only","workspace-write","danger-full-access"]),
                                 ] {
-                                    ui.label(label);let mut text=d.parsed.get(key).and_then(Item::as_str).unwrap_or("").to_owned();let before=text.clone();
-                                    if choices.is_empty(){ui.add(egui::TextEdit::singleline(&mut text).hint_text(lang.text("Codex 기본값")).desired_width(200.0));}
-                                    else {egui::ComboBox::from_id_salt(key).width(200.0).selected_text(if text.is_empty(){lang.text("Codex 기본값")}else{&text}).show_ui(ui,|ui|{ui.selectable_value(&mut text,String::new(),lang.text("Codex 기본값"));for choice in choices{ui.selectable_value(&mut text,(*choice).into(),*choice);}});}
+                                    let help = match key {
+                                        "approval_policy" => lang.text("untrusted: 신뢰되지 않은 작업 확인 · on-request: 필요할 때 확인 · never: 승인 질문 없음"),
+                                        "sandbox_mode" => lang.text("read-only: 읽기 전용 · workspace-write: 작업 폴더 편집 · danger-full-access: 제한 없음"),
+                                        _ => lang.text("Codex 사용자 기본값 · 프로젝트 설정이나 관리 정책이 우선할 수 있습니다."),
+                                    };
+                                    ui.label(label).on_hover_text(help);let mut text=d.parsed.get(key).and_then(Item::as_str).unwrap_or("").to_owned();let before=text.clone();
+                                    if choices.is_empty(){ui.add(egui::TextEdit::singleline(&mut text).hint_text(lang.text("Codex 기본값")).desired_width(200.0)).on_hover_text(help);}
+                                    else {egui::ComboBox::from_id_salt(key).width(200.0).selected_text(if text.is_empty(){lang.text("Codex 기본값")}else{&text}).show_ui(ui,|ui|{ui.selectable_value(&mut text,String::new(),lang.text("Codex 기본값"));for choice in choices{ui.selectable_value(&mut text,(*choice).into(),*choice);}}).response.on_hover_text(help);}
                                     if text!=before {if text.is_empty(){d.parsed.remove(key);}else{d.parsed[key]=value(text);}changed=true;}
                                     ui.end_row();
                                 }
                             });
-                            ui.small(lang.text("read-only: 읽기 전용 · workspace-write: 작업 폴더 편집 · danger-full-access: 제한 없음"));
-                            ui.small(lang.text("untrusted: 신뢰되지 않은 작업 확인 · on-request: 필요할 때 확인 · never: 승인 질문 없음"));
                             if changed{d.config.text=d.parsed.to_string();}
-                            if ui.add_enabled(d.config.dirty(),egui::Button::new(lang.text("기본값 저장"))).clicked(){save=Some((d.config.clone(),true));}
+                            if ui.add_enabled(d.config.dirty(),egui::Button::new(lang.text("기본값 저장"))).on_hover_text(lang.text("파일 저장 전 원본을 백업하며 외부 변경을 감지하면 저장을 중단합니다.")).clicked(){save=Some((d.config.clone(),true));}
                         }
                         2=>{
-                            ui.label(lang.text("Codex가 인식하는 스킬 · 켜기/끄기는 전역 사용자 설정에 저장됩니다."));
-                            if !ready {ui.label(lang.text("먼저 메인 화면에서 Codex에 연결하세요."));}
-                            if ui.add_enabled(ready && !d.config.dirty(),egui::Button::new(lang.text("스킬 목록 새로고침"))).clicked(){action=Some(Action::RefreshSkills);}
+                            if ui.add_enabled(ready && !d.config.dirty(),egui::Button::new(lang.text("스킬 목록 새로고침")))
+                                .on_hover_text(lang.text("Codex가 인식하는 스킬 · 켜기/끄기는 전역 사용자 설정에 저장됩니다."))
+                                .on_disabled_hover_text(lang.text(if !ready {"먼저 메인 화면에서 Codex에 연결하세요."} else {"스킬을 변경하려면 다른 전역 설정을 먼저 저장하세요."})).clicked(){action=Some(Action::RefreshSkills);}
                             ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text(lang.text("스킬 검색")));
                             let filter=self.filter.to_lowercase();
                             for skill in self.skills.iter().filter(|s|s["name"].as_str().unwrap_or("").to_lowercase().contains(&filter)) {
                                 let name=skill["name"].as_str().unwrap_or("");let path=skill["path"].as_str().unwrap_or("");let mut enabled=skill["enabled"].as_bool().unwrap_or(true);
                                 ui.push_id(path,|ui| {
-                                    if ui.add_enabled(ready && !d.config.dirty(),egui::Checkbox::new(&mut enabled,name)).on_hover_text(path).changed(){action=Some(Action::Skill(path.into(),enabled));}
-                                    ui.label(RichText::new(skill["description"].as_str().unwrap_or("")).small());
+                                    if ui.add_enabled(ready && !d.config.dirty(),egui::Checkbox::new(&mut enabled,name)).on_hover_text(format!("{}\n{}", skill["description"].as_str().unwrap_or(""), path))
+                                        .on_disabled_hover_text(lang.text(if !ready {"먼저 메인 화면에서 Codex에 연결하세요."} else {"스킬을 변경하려면 다른 전역 설정을 먼저 저장하세요."})).changed(){action=Some(Action::Skill(path.into(),enabled));}
                                 });
                             }
-                            if d.config.dirty(){ui.label(lang.text("스킬을 변경하려면 다른 전역 설정을 먼저 저장하세요."));}
                         }
                         3=>{
                             ui.label(lang.text("Codex 실행 파일"));
                             let draft=self.binary_draft.as_mut().unwrap();
-                            ui.text_edit_singleline(draft);
+                            ui.text_edit_singleline(draft).on_hover_text(lang.text("실행 경로는 Mini에 저장됩니다. MCP 설정은 Codex config.toml에 저장됩니다."));
                             if ui.add_enabled(!draft.trim().is_empty() && draft != binary,egui::Button::new(lang.text("실행 경로 저장"))).clicked(){action=Some(Action::Binary(draft.trim().into()));self.changed=true;}
-                            ui.small(lang.text("실행 경로는 Mini에 저장됩니다. MCP 설정은 Codex config.toml에 저장됩니다."));
                             ui.separator();ui.strong(lang.text("MCP 서버"));
                             let mut toggle=None;
                             if let Some(servers)=d.parsed.get("mcp_servers").and_then(Item::as_table_like){
@@ -300,7 +299,7 @@ impl GlobalUi {
                                 }
                             }
                             if let Some((name,enabled))=toggle {d.parsed["mcp_servers"][&name]["enabled"]=value(enabled);d.config.text=d.parsed.to_string();}
-                            ui.toggle_value(&mut self.mcp_editor_open,lang.text("서버 추가 / 편집"));
+                            ui.toggle_value(&mut self.mcp_editor_open,lang.text("서버 추가 / 편집")).on_hover_text(lang.text("환경 변수·인증·프로필 등 추가 옵션은 고급 탭에서 편집할 수 있습니다."));
                             if self.mcp_editor_open { ui.scope(|ui| {
                                 ui.label(lang.text("서버 이름"));ui.text_edit_singleline(&mut self.mcp_name);
                                 ui.horizontal(|ui| {ui.selectable_value(&mut self.mcp_http,false,lang.text("로컬 명령"));ui.selectable_value(&mut self.mcp_http,true,"HTTP URL");});
@@ -311,22 +310,20 @@ impl GlobalUi {
                                     match update_mcp(&mut d.parsed,&self.mcp_name,&self.mcp_command,&self.mcp_args,&self.mcp_url,self.mcp_http){Ok(())=>{d.config.text=d.parsed.to_string();self.message="아래 저장 버튼을 눌러 적용하세요.".into();},Err(e)=>self.message=e}
                                 }
                             }); }
-                            if ui.add_enabled(d.config.dirty(),egui::Button::new(lang.text("MCP 설정 저장"))).clicked(){save=Some((d.config.clone(),true));}
-                            ui.small(lang.text("환경 변수·인증·프로필 등 추가 옵션은 고급 탭에서 편집할 수 있습니다."));
+                            if ui.add_enabled(d.config.dirty(),egui::Button::new(lang.text("MCP 설정 저장"))).on_hover_text(lang.text("파일 저장 전 원본을 백업하며 외부 변경을 감지하면 저장을 중단합니다.")).clicked(){save=Some((d.config.clone(),true));}
                         }
                         _=>{
                             ui.add(egui::Label::new(d.config.path.display().to_string()).truncate());
                             if ui.add(egui::TextEdit::multiline(&mut d.config.text).code_editor().desired_rows(14).desired_width(f32::INFINITY).char_limit(1024*1024)).changed(){
                                 match d.config.text.parse::<DocumentMut>(){Ok(doc)=>{d.parsed=doc;d.config_valid=true;self.message.clear();},Err(e)=>{d.config_valid=false;self.message=format!("TOML 문법 오류: {e}")}}
                             }
-                            if ui.add_enabled(d.config.dirty(),egui::Button::new(lang.text("config.toml 저장"))).clicked(){save=Some((d.config.clone(),true));}
+                            if ui.add_enabled(d.config.dirty(),egui::Button::new(lang.text("config.toml 저장"))).on_hover_text(lang.text("파일 저장 전 원본을 백업하며 외부 변경을 감지하면 저장을 중단합니다.")).clicked(){save=Some((d.config.clone(),true));}
                         }
                     }
                 });
-                if !idle{ui.label(lang.text("작업이 끝난 뒤 전역 설정을 변경할 수 있습니다."));}
+                settings.response.on_disabled_hover_text(lang.text("작업이 끝난 뒤 전역 설정을 변경할 수 있습니다."));
                 ui.separator();
-                if ui.add_enabled(!d.agents.dirty() && !d.config.dirty(),egui::Button::new(lang.text("파일 다시 불러오기"))).clicked(){reload=true;}
-                ui.small(lang.text("파일 저장 전 원본을 백업하며 외부 변경을 감지하면 저장을 중단합니다."));
+                if ui.add_enabled(!d.agents.dirty() && !d.config.dirty(),egui::Button::new(lang.text("파일 다시 불러오기"))).on_hover_text(lang.text("파일 저장 전 원본을 백업하며 외부 변경을 감지하면 저장을 중단합니다.")).clicked(){reload=true;}
             });
         if let Some((file, is_toml)) = save {
             self.job(ctx, move || {

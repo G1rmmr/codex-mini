@@ -70,6 +70,124 @@ impl Language {
 }
 
 const CATALOG: &[(&str, &str)] = &[
+    ("앱", "App"),
+    ("열기", "Open"),
+    ("앱 종료", "Quit app"),
+    ("백그라운드로 보내기", "Run in background"),
+    ("앱을 종료할까요?", "Quit the app?"),
+    (
+        "종료하면 진행 중인 작업이 중단됩니다.",
+        "Quitting stops the current task.",
+    ),
+    ("계속 실행", "Keep running"),
+    ("작업 중단 후 종료", "Stop task and quit"),
+    ("작업 완료 알림", "Task notifications"),
+    (
+        "작업 완료와 추가 질문을 시스템 알림으로 보냅니다.",
+        "Send system notifications for completed tasks and follow-up questions.",
+    ),
+    ("Codex Mini · 답변 필요", "Codex Mini · Answer needed"),
+    (
+        "추가 질문이 도착했습니다. 앱에서 질문을 확인하고 답변하세요.",
+        "A follow-up question has arrived. Open the app to review and answer it.",
+    ),
+    ("Codex Mini · 작업 완료", "Codex Mini · Task complete"),
+    ("Codex Mini · 작업 실패", "Codex Mini · Task failed"),
+    ("Codex Mini · 확인 필요", "Codex Mini · Action required"),
+    (
+        "{project} · 작업이 완료되었습니다.",
+        "{project} · Task complete.",
+    ),
+    (
+        "{project} · 작업을 완료하지 못했습니다. 앱에서 확인하세요.",
+        "{project} · Task failed. Open the app for details.",
+    ),
+    (
+        "작업을 계속하려면 앱에서 요청 내용을 확인하세요.",
+        "Review the request in the app to continue the task.",
+    ),
+    (
+        "창을 닫아도 작업은 계속됩니다. 트레이에서 다시 열 수 있습니다.",
+        "Tasks continue when you close the window. Reopen it from the tray.",
+    ),
+    (
+        "트레이를 사용할 수 없어 창을 닫으면 최소화합니다. 작업은 계속됩니다.",
+        "No tray is available. Closing minimizes the window; tasks keep running.",
+    ),
+    (
+        "시스템 알림·트레이 상태를 확인하세요. 운영체제 알림 설정과 앱 진단을 확인할 수 있습니다.",
+        "Check system notification settings and the app diagnostics for notification or tray errors.",
+    ),
+    (
+        "현재 작업을 유지합니다. 새 프로젝트는 작업이 끝난 뒤 선택하세요.",
+        "The current task continues. Select the new project after it finishes.",
+    ),
+    (
+        "작업이 끝난 뒤 프로젝트를 편집하세요.",
+        "Edit the project after the current task finishes.",
+    ),
+    (
+        "추가 메시지 전송 실패 · 다시 보내세요",
+        "Follow-up message failed · send it again",
+    ),
+    (
+        "컨텍스트 압축이 끝난 뒤 보낼 수 있습니다.",
+        "Send after context compaction finishes.",
+    ),
+    (
+        "대화 준비가 끝나면 보낼 수 있습니다.",
+        "Send when the chat is ready.",
+    ),
+    (
+        "현재 작업에 메시지를 바로 추가합니다.",
+        "Add a message to the current task immediately.",
+    ),
+    (
+        "프로젝트 지침 · 선택 사항",
+        "Project instructions · optional",
+    ),
+    (
+        "Enter 전송 · Shift+Enter 줄바꿈",
+        "Enter to send · Shift+Enter for newline",
+    ),
+    (
+        "작업이 끝난 뒤 보낼 수 있습니다.",
+        "Send after the current task finishes.",
+    ),
+    ("대화 관리", "Manage chat"),
+    ("노력", "Effort"),
+    ("권장", "Recommended"),
+    ("지침 입력", "Add instructions"),
+    (
+        "권장: 프로젝트 지침 기반의 로컬 추천",
+        "Recommendation: local rules based on project instructions",
+    ),
+    (
+        "변경한 노력은 다음 전송부터 적용됩니다.",
+        "Effort changes apply to the next message.",
+    ),
+    ("컨텍스트 자동 압축 · 80%", "Auto compact context · 80%"),
+    ("다른 프로젝트로 이동", "Move to project"),
+    (
+        "이후 작업에는 대상 폴더와 지침이 적용됩니다.",
+        "Future work uses the destination folder and instructions.",
+    ),
+    ("대화 삭제…", "Delete chat…"),
+    ("지금 컨텍스트 압축", "Compact context now"),
+    ("대화 삭제", "Delete chat"),
+    ("영구 삭제", "Delete permanently"),
+    (
+        "원본 대화와 하위 대화를 영구 삭제합니다. 되돌릴 수 없습니다. 작업 파일은 유지됩니다.",
+        "Permanently delete this chat and its child chats. This cannot be undone. Working files are kept.",
+    ),
+    ("대화를 삭제했습니다.", "Chat deleted."),
+    (
+        "대화를 이동했습니다. 대상 프로젝트에서 이어가세요.",
+        "Chat moved. Continue in the destination project.",
+    ),
+    ("컨텍스트 압축 중…", "Compacting context…"),
+    ("컨텍스트 압축 완료", "Context compacted"),
+    ("컨텍스트 압축 실패", "Context compaction failed"),
     ("화면", "Appearance"),
     ("기본 · RTK", "Default · RTK"),
     ("{}\n… [화면 표시 생략]", "{}\n… [display truncated]"),
@@ -151,6 +269,13 @@ const CATALOG: &[(&str, &str)] = &[
     ),
     ("기본 모델", "Default model"),
     ("추론 강도", "Reasoning effort"),
+    ("자동수락", "Auto-accept"),
+    ("자동수락: 켜짐", "Auto-accept: on"),
+    ("자동수락: 꺼짐", "Auto-accept: off"),
+    (
+        "이번 연결에서 명령·파일 변경·권한 요청을 자동수락합니다. 직접 답변하는 질문은 제외됩니다. 연결 종료 시 꺼집니다.",
+        "Automatically accept command, file change and permission requests for this connection. Questions still need your answer. Turns off on disconnect.",
+    ),
     ("승인 정책", "Approval policy"),
     ("실행 권한", "Sandbox mode"),
     ("Codex 기본값", "Codex default"),
@@ -332,8 +457,12 @@ const CATALOG: &[(&str, &str)] = &[
         "Review the action before deciding.",
     ),
     (
-        "전체 내용을 표시할 수 없어 허용을 비활성화했습니다. CLI에서 검토하세요.",
-        "Full details could not be displayed. Approval is disabled. Review in the CLI.",
+        "미리보기가 비어 있거나 일부 내용이 생략되었습니다. 이 요청은 자동수락하지 않습니다. 직접 허용하거나 거절하세요.",
+        "The preview is empty or incomplete. This request stays manual. Allow or decline it here.",
+    ),
+    (
+        "요청한 권한 정보가 없어 허용할 수 없습니다.",
+        "Cannot allow: requested permission details are missing.",
     ),
     ("답변 보내기", "Send answers"),
     (
@@ -372,8 +501,8 @@ const CATALOG: &[(&str, &str)] = &[
     ),
     ("기본 추론", "Default effort"),
     (
-        "환경 설정에서 지정한 추론 값이 우선합니다. 모델별 지원 범위가 다릅니다.",
-        "Settings override this effort. Supported values depend on the model.",
+        "채팅창에서 지정한 노력이 우선합니다. 모델별 지원 범위가 다릅니다.",
+        "The chat composer overrides this effort. Supported values depend on the model.",
     ),
     ("Cargo 로그 필터 (RTK)", "Cargo log filter (RTK)"),
     (
@@ -435,7 +564,6 @@ const CATALOG: &[(&str, &str)] = &[
     ("연결 종료", "Disconnect"),
     ("닫기", "Dismiss"),
     ("메시지 입력", "Message"),
-    ("Ctrl+Enter 전송", "Ctrl+Enter to send"),
     ("보내기", "Send"),
     (
         "연결 후 메시지를 입력하세요.",
@@ -523,12 +651,15 @@ mod tests {
             serde_json::from_str(r#"{"cwd":"/project","model":"saved-model"}"#).unwrap();
         assert_eq!(settings.language, Language::Korean);
         assert_eq!(settings.theme, Theme::Dark);
+        assert!(settings.notifications);
+        settings.notifications = false;
         settings.language = Language::English;
         settings.theme = Theme::Light;
         let saved = serde_json::to_string(&settings).unwrap();
         let loaded: Settings = serde_json::from_str(&saved).unwrap();
         assert_eq!(loaded.language, Language::English);
         assert_eq!(loaded.theme, Theme::Light);
+        assert!(!loaded.notifications);
         assert_eq!(loaded.model, "saved-model");
         let future: Settings =
             serde_json::from_str(r#"{"cwd":"/project","language":"unknown","theme":"unknown"}"#)
